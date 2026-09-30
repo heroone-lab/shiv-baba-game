@@ -1,0 +1,10 @@
+{
+  "name": "SHIV BABA — Obstacle Course",
+  "short_name": "SHIV BABA",
+  "start_url": ".",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#06245a",
+  "theme_color": "#06245a",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
