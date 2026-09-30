@@ -15,7 +15,7 @@ export class Input {
 
     addEventListener('keydown', (e) => {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
-      if (e.code === 'Escape' || e.code === 'KeyP') this.pausePressed = true;
+      if (['Escape', 'KeyP', 'Backspace', 'BrowserBack', 'MediaPlayPause', 'MediaPause'].includes(e.code) || ['GoBack', 'MediaPlayPause'].includes(e.key)) this.pausePressed = true;
       this.keys.add(e.code);
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -40,7 +40,8 @@ export class Input {
     let move = 0;
     if (k.has('ArrowRight') || k.has('KeyD') || this.touch.right) move += 1;
     if (k.has('ArrowLeft') || k.has('KeyA') || this.touch.left) move -= 1;
-    let jump = k.has('Space') || k.has('ArrowUp') || k.has('KeyW') || this.touch.jump;
+    // Enter = the OK button in the middle of a TV remote's D-pad
+    let jump = k.has('Space') || k.has('ArrowUp') || k.has('KeyW') || k.has('Enter') || k.has('NumpadEnter') || this.touch.jump;
     let slide = k.has('ArrowDown') || k.has('KeyS') || k.has('ShiftLeft') || this.touch.slide;
 
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];

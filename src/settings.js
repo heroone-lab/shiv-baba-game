@@ -1,4 +1,4 @@
-import { IS_TOUCH } from './quality.js';
+import { IS_TOUCH, IS_TV } from './quality.js';
 
 // Player-selectable display settings, persisted in localStorage.
 //   resolution: internal render height (short side of the screen) — 480 / 720 / 1080
@@ -18,12 +18,16 @@ export const RES_PRESETS = {
   1080: { shadowMap: 2048, waterRes: 1024, post: true, bloom: true, msaa: 0, fancy: true, cheapWater: false, shadowEvery: 1 },
   auto: { shadowMap: 1024, waterRes: 512, post: true, bloom: true, msaa: 0, fancy: false, cheapWater: false, shadowEvery: 1 },
 };
+/** Lite graphics: same budget at every resolution (no shadows, mirror or post at all). */
+export const LITE_PRESET = { shadowMap: 512, waterRes: 256, post: false, bloom: false, msaa: 0, fancy: false, cheapWater: true, shadowEvery: 4 };
+/** highest render height the auto-resolution controller may pick (TV GPUs cannot drive 1080p) */
+export const AUTO_CAP = IS_TV ? 720 : 1080;
 export const AUTO_MIN = 360, AUTO_MAX = 1080;
 
 const KEY = 'sb_display';
 
 export function loadSettings() {
-  const def = IS_TOUCH ? { resolution: 'auto', fps: 30, showFps: false } : { resolution: 'auto', fps: 60, showFps: false };
+  const def = IS_TOUCH || IS_TV ? { resolution: 'auto', fps: 30, showFps: false } : { resolution: 'auto', fps: 60, showFps: false };
   try {
     const s = { ...def, ...JSON.parse(localStorage.getItem(KEY) || '{}') };
     if (!RESOLUTIONS.includes(s.resolution)) s.resolution = def.resolution;

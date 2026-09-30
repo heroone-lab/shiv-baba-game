@@ -1,0 +1,12 @@
+{
+	"appId": "com.shivbaba.obstaclecourse",
+	"appName": "SHIV BABA TV",
+	"webDir": "dist",
+	"backgroundColor": "#06245a",
+	"android": {
+		"allowMixedContent": false,
+		"captureInput": true,
+		"webContentsDebuggingEnabled": false,
+		"appendUserAgent": "ShivBabaTV"
+	}
+}

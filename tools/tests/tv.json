@@ -1,0 +1,16 @@
+[{"path":"/index.html?tv&unlockall","w":960,"h":540,"steps":[
+ {"until":"window.__game && __game.mode==='menu'"},{"wait":900},
+ {"eval":"({tv:document.body.classList.contains('tv'), touch:document.body.classList.contains('touch'), gfx:__game.gfx, tier:__game.q.tier, fps:__game.settings.fps, res:__game.settings.resolution, shadows:__game.renderer.shadowMap.enabled, post:!!__game.composer, focus:document.activeElement.id||document.activeElement.className})"},
+ {"key":"ArrowUp"},{"wait":200},{"key":"ArrowRight"},{"wait":200},{"key":"ArrowRight"},{"wait":300},{"shot":"shots/tv_menu.png"},
+ {"eval":"(document.activeElement.innerText||'').replace(/\\n/g,' | ')"},
+ {"key":"ArrowDown"},{"wait":200},{"key":"ArrowRight"},{"wait":200},{"eval":"document.activeElement.id"},
+ {"key":"Enter"},{"wait":700},{"shot":"shots/tv_settings.png"},{"eval":"document.querySelector('.screen.show').id+' focus='+document.activeElement.tagName+'#'+document.activeElement.id+' '+(document.activeElement.tagName==='BUTTON'?document.activeElement.textContent:'')"},
+ {"key":"Escape"},{"wait":500},{"eval":"document.querySelector('.screen.show').id"},
+ {"eval":"(()=>{const g=__game; g.loadRound('E2'); g.showScreen(null); g.showHud(true); g.mode='play'; g.player.release(); g.player.respawn({x:44,y:1.4}); g.simulate(0.4,()=>({move:1})); g.cam.snap(g.player,g.course); g.frozenForTest=false; return 1})()"},
+ {"wait":1500},{"shot":"shots/tv_e2.png"},
+ {"eval":"(()=>{const g=__game; g.frozenForTest=true; g.loadRound('E6'); g.showScreen(null); g.showHud(true); g.mode='play'; g.player.release(); const c=g.course; const o=c.obstacles[12]; let x=o.x-3; g.player.respawn({x,y:c.supportAt(x,0).topAt(x)}); g.simulate(0.4,()=>({move:1})); g.cam.snap(g.player,g.course); g.frozenForTest=false; return 1})()"},
+ {"wait":1500},{"shot":"shots/tv_e6.png"},
+ {"eval":"(()=>{const g=__game; g.frozenForTest=true; g.loadRound('E4'); g.showScreen(null); g.showHud(true); g.mode='play'; g.player.release(); const c=g.course; const o=c.obstacles[4]; let x=o.x-3; g.player.respawn({x,y:c.supportAt(x,0).topAt(x)}); g.simulate(0.4,()=>({move:1})); g.cam.snap(g.player,g.course); g.frozenForTest=false; return 1})()"},
+ {"wait":1500},{"shot":"shots/tv_e4.png"},
+ {"key":"Escape"},{"wait":600},{"shot":"shots/tv_pause.png"},{"eval":"__game.mode+' focus='+document.activeElement.tagName+'#'+document.activeElement.id+' '+(document.activeElement.tagName==='BUTTON'?document.activeElement.textContent:'')"}
+]}]

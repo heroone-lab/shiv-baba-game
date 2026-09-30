@@ -3,7 +3,9 @@ import {
   EffectComposer, RenderPass, EffectPass, BloomEffect, SMAAEffect, VignetteEffect,
   ToneMappingEffect, ToneMappingMode, HueSaturationEffect, BrightnessContrastEffect,
 } from 'postprocessing';
-import { detectQuality, qualitySettings, IS_TOUCH } from './quality.js';
+import { detectQuality, qualitySettings, graphicsMode, IS_TOUCH, IS_TV } from './quality.js';
+import { liteMaterials, BlobShadow } from './lite.js';
+import { initTvNav, focusDefault } from './tvnav.js';
 import { loadAssets } from './assets.js';
 import { Materials } from './world/materials.js';
 import { Environment } from './world/environment.js';
@@ -17,7 +19,7 @@ import { Input } from './input.js';
 import { Audio } from './audio.js';
 import { Particles } from './fx/particles.js';
 import { testCapsule } from './collision.js';
-import { loadSettings, saveSettings, RES_PRESETS, RESOLUTIONS, FPS_OPTIONS, pixelRatioFor, FrameLimiter, FpsMeter, AutoResolution, gpuInfo } from './settings.js';
+import { LITE_PRESET, AUTO_CAP, loadSettings, saveSettings, RES_PRESETS, RESOLUTIONS, FPS_OPTIONS, pixelRatioFor, FrameLimiter, FpsMeter, AutoResolution, gpuInfo } from './settings.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
@@ -50,12 +52,14 @@ function isUnlocked(id) {
 export class Game {
   constructor() {
     this.q = qualitySettings(detectQuality());
+    this.gfx = graphicsMode();
+    this.lite = this.gfx === 'lite';
     this.settings = loadSettings();
     // resolution preset decides shadow/reflection/post budgets
     Object.assign(this.q, this.displayBudget());
     this.limiter = new FrameLimiter(this.settings.fps);
     this.fpsMeter = new FpsMeter();
-    this.autoRes = new AutoResolution(IS_TOUCH ? 540 : 720);
+    this.autoRes = new AutoResolution(IS_TOUCH || IS_TV ? 540 : 720);
     this.frameNo = 0;
     this.slowTime = 0;
     this.mode = 'loading'; // loading | menu | intro | countdown | play | paused | done
@@ -72,6 +76,7 @@ export class Game {
     this.roundId = ROUNDS[want] ? want : ROUNDS[last] && isUnlocked(last) ? last : 'E1';
     this.realTime = 0;
     if (IS_TOUCH) document.body.classList.add('touch');
+    if (IS_TV) document.body.classList.add('tv');
   }
 
   async boot() {
@@ -105,7 +110,7 @@ export class Game {
     const canvas = $('c');
     const r = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: true });
     r.setPixelRatio(this.currentPixelRatio());
-    r.shadowMap.enabled = true;
+    r.shadowMap.enabled = !this.lite; // lite: blob shadow instead of a shadow map
     r.shadowMap.type = THREE.PCFShadowMap;
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.NoToneMapping; // handled by the post stack
@@ -120,7 +125,7 @@ export class Game {
   }
 
   displayBudget() {
-    const p = RES_PRESETS[this.settings.resolution];
+    const p = this.lite ? LITE_PRESET : RES_PRESETS[this.settings.resolution];
     // MSAA is expensive on phone GPUs; SMAA gives similar edges for far less
     const msaa = IS_TOUCH ? 0 : p.msaa;
     return { shadowMap: p.shadowMap, waterRes: p.waterRes, post: p.post, bloom: p.bloom, msaa, fancy: p.fancy, cheapWater: p.cheapWater, shadowEvery: p.shadowEvery };
@@ -197,6 +202,12 @@ export class Game {
     this.player.freeze();
     this.cam.snap(this.player, this.course);
     this.env.water.setCheap(this.q.cheapWater);
+    if (this.lite) {
+      this.env.setLite(true);
+      this.env.water.setMirror(false);
+      this.blob = new BlobShadow(this.scene);
+      liteMaterials(this.scene);
+    }
     this.initPost();
     this.buildProgressTicks();
     this.cpIndex = 0;
@@ -216,6 +227,7 @@ export class Game {
       this.course.dispose();
       this.roundId = id;
       this.course = new Course(this.scene, this.mats, ROUNDS[id]);
+      if (this.lite) liteMaterials(this.course.group);
       this.player.course = this.course;
       this.env.setTheme(this.course.theme, this.course.def.episode);
       this.buildProgressTicks();
@@ -246,6 +258,10 @@ export class Game {
 
   bindUI() {
     this.input.bindTouch($('touch'));
+    initTvNav(this);
+    if (window.Capacitor?.isNativePlatform?.()) {
+      import('@capacitor/app').then(({ App }) => App.addListener('backButton', () => this.onBack())).catch(() => {});
+    }
     const unlock = () => this.audio.unlock();
     addEventListener('pointerdown', unlock, { passive: true });
     addEventListener('keydown', unlock);
@@ -319,7 +335,7 @@ export class Game {
     };
     seg('setRes', RESOLUTIONS, (v) => (v === 'auto' ? 'Auto' : `${v}p`), () => this.settings.resolution, (v) => {
       this.settings.resolution = v;
-      if (v === 'auto') this.autoRes.reset(Math.min(720, pixelRatioFor(1080).nativeShort));
+      if (v === 'auto') this.autoRes.reset(Math.min(IS_TV ? 540 : 720, pixelRatioFor(1080).nativeShort));
       this.applyDisplay();
     });
     seg('setFps', FPS_OPTIONS, (v) => `${v} FPS`, () => this.settings.fps, (v) => { this.settings.fps = v; this.applyDisplay(); });
@@ -329,6 +345,10 @@ export class Game {
         if (v === 'auto') localStorage.removeItem('sb_quality'); else localStorage.setItem('sb_quality', v);
         if ((v === 'auto' ? detectQuality() : v) !== this.q.tier) { $('setNote').textContent = 'Reloading textures…'; setTimeout(() => location.reload(), 250); }
       });
+    seg('setGfx', ['full', 'lite'], (v) => (v === 'full' ? 'Full' : 'Lite (fast)'), () => this.gfx, (v) => {
+      localStorage.setItem('sb_gfx', v);
+      if (v !== this.gfx) { $('setNote').textContent = 'Reloading…'; setTimeout(() => location.reload(), 250); }
+    });
     seg('setFpsShow', [true, false], (v) => (v ? 'On' : 'Off'), () => this.settings.showFps, (v) => { this.settings.showFps = v; this.applyDisplay(); });
     seg('setSound', [true, false], (v) => (v ? 'On' : 'Off'), () => !this.audio.muted, (v) => this.audio.setMuted(!v));
     $('settingsBack').onclick = () => this.closeSettings();
@@ -341,7 +361,7 @@ export class Game {
     const w = Math.round(renderShort * Math.max(innerWidth, innerHeight) / Math.min(innerWidth, innerHeight));
     const capped = !auto && renderShort < this.settings.resolution;
     let note = auto
-      ? `Auto: resolution changes by itself (360p–1080p) to hold ${this.settings.fps} FPS. Now ${w} × ${renderShort}.`
+      ? `Auto: resolution changes by itself (360p–${AUTO_CAP}p) to hold ${this.settings.fps} FPS. Now ${w} × ${renderShort}.`
       : `Rendering ${w} × ${renderShort}` + (capped ? ` (your screen is ${nativeShort}p, so ${this.settings.resolution}p is capped)` : '') + ` · target ${this.settings.fps} FPS`;
     $('setNote').textContent = note;
     const g = $('setGpu');
@@ -387,6 +407,17 @@ export class Game {
 
   showScreen(id) {
     for (const s of document.querySelectorAll('.screen')) s.classList.toggle('show', s.id === id);
+    if (!id) document.activeElement?.blur?.(); // nothing focused while running (OK = jump)
+    else setTimeout(focusDefault, 60); // remote / keyboard: land on the obvious button
+  }
+
+  /** Android back button, remote Back, Escape outside of play. */
+  onBack() {
+    const scr = document.querySelector('.screen.show')?.id;
+    if (scr === 'settings') return this.closeSettings();
+    if (this.mode === 'play' || this.mode === 'paused') return this.togglePause();
+    if (this.mode === 'intro' || this.mode === 'countdown' || this.mode === 'done' || scr === 'result') return this.toMenu();
+    if (this.mode === 'menu' && window.Capacitor?.isNativePlatform?.()) import('@capacitor/app').then(({ App }) => App.exitApp());
   }
 
   showHud(on) {
@@ -462,10 +493,12 @@ export class Game {
   async respawn() {
     if (this.mode !== 'play') return;
     await this.fade(true);
-    if (this.mode !== 'play') return;
-    const cp = this.course.checkpointFor(this.player.maxX);
-    this.player.respawn(cp);
-    this.cam.snap(this.player, this.course);
+    // pausing during the fade must not leave the screen black: finish the respawn anyway
+    if (this.mode === 'play' || this.mode === 'paused') {
+      const cp = this.course.checkpointFor(this.player.maxX);
+      this.player.respawn(cp);
+      this.cam.snap(this.player, this.course);
+    }
     await this.fade(false);
     if (this.def.countdown && this.mode === 'play') { this.banner('Get Ready!', 1.0); this.audio.getReady(); }
   }
@@ -594,7 +627,7 @@ export class Game {
     const dtMs = this.lastFrameAt ? now - this.lastFrameAt : 16;
     this.lastFrameAt = now;
     if (this.settings.resolution === 'auto' && this.fpsMeter.times.length > 8 && this.mode !== 'paused') {
-      if (this.autoRes.update(dtMs / 1000, fps, this.settings.fps, pixelRatioFor(1080).nativeShort)) {
+      if (this.autoRes.update(dtMs / 1000, fps, this.settings.fps, Math.min(AUTO_CAP, pixelRatioFor(1080).nativeShort))) {
         this.renderer.setPixelRatio(this.currentPixelRatio());
         this.renderer.setSize(innerWidth, innerHeight, false);
         this.composer?.setSize(innerWidth, innerHeight);
@@ -691,6 +724,7 @@ export class Game {
   /** Per-rendered-frame work: camera, particles, water, flags, HUD text. */
   visuals(dt) {
     if (this.mode === 'paused') return;
+    this.blob?.update(this.player.pos, this.course);
     if (this.mode === 'play' || this.mode === 'done') this.updateTimerHud();
     this.course.visuals();
     this.particles.update(dt);

@@ -235,3 +235,16 @@ body.touch .desktop-only { display: none; }
 .ico { width: 1em; height: 1em; vertical-align: -0.14em; display: inline-block; }
 .round .lock .ico { width: 24px; height: 24px; }
 @media (max-height: 640px) { .round { width: 138px; padding: 8px; } }
+
+/* ---------- TV (10-foot UI): remote focus ring, overscan-safe margins ---------- */
+body:not(.tv) .tv-only { display: none; }
+body.tv .no-tv { display: none; }
+body.tv { --safe-t: 3.5vh; --safe-b: 3.5vh; --safe-l: 3.5vw; --safe-r: 3.5vw; }
+body.tv .screen { padding: 5vh 5vw; }
+button:focus { outline: none; }
+button:focus-visible, body.tv button:focus {
+  outline: 4px solid #fff; outline-offset: 3px; box-shadow: 0 0 0 9px #ffc21a99, 0 10px 24px #0008;
+  transform: scale(1.06); z-index: 2; position: relative;
+}
+.seg button:focus-visible, body.tv .seg button:focus { transform: scale(1.1); }
+body.tv #gpuWarn { display: none !important; }

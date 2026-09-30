@@ -12,7 +12,11 @@ npm run build          # production web build -> dist/
 npx cap sync android   # copy dist/ into the Android project
 cd android && ./gradlew assembleDebug   # APK -> android/app/build/outputs/apk/debug/
 ```
-**Download the Android APK:** [apk/ShivBaba-v0.5.0-debug.apk](apk/ShivBaba-v0.5.0-debug.apk). Open it, tap "Download raw file", then install it on your phone (allow "Install unknown apps"). This is a debug build, not for the Play Store.
+**Download the Android APKs** (debug builds, not for the Play Store). Open the link, tap "Download raw file", then allow "Install unknown apps":
+- Phone / tablet: [apk/ShivBaba-v0.6.0-debug.apk](apk/ShivBaba-v0.6.0-debug.apk)
+- **Android TV**: [apk/ShivBaba-TV-v0.6.0-debug.apk](apk/ShivBaba-TV-v0.6.0-debug.apk). Package `com.shivbaba.obstaclecourse.tv`, so it can sit next to the phone app. It shows up on the TV home screen with a banner. Install it with a USB stick and a file manager, or send it over with "Send Files to TV".
+
+Build both: `npx vite build && npx cap sync android && sh tools/sync_tv.sh && (cd android && ./gradlew assembleDebug)`. Output goes to `android/app/build/outputs/apk/{phone,tv}/debug/`.
 
 ## Display settings (menu → SETTINGS, also from Pause)
 | Resolution | Shadow map | Water reflection | Water shader | Post effects (bloom, grading, SMAA) | Pad clearcoat |
@@ -30,7 +34,23 @@ cd android && ./gradlew assembleDebug   # APK -> android/app/build/outputs/apk/d
 - **GPU line** in Settings shows which graphics chip the browser uses. If it is a software renderer (SwiftShader, "Microsoft Basic Render"), the game warns you to enable hardware acceleration.
 - Performance work: static geometry merged (draw calls 246 → ~114). Lane floats, flags and vegetation are left out of the water reflection. Flags wave on the GPU.
 
-URL options: `?res=auto|480|720|1080`, `?fps=30|48|60`, `?q=high|low`, `?nopost`, `?autostart`, `?ep=E1…E6`, `?unlockall`.
+URL options: `?gfx=lite|full`, `?tv`, `?res=auto|480|720|1080`, `?fps=30|48|60`, `?q=high|low`, `?nopost`, `?autostart`, `?ep=E1…E6`, `?unlockall`.
+
+## Graphics: Full / Lite (menu → SETTINGS → Graphics)
+**Lite** uses the tricks 2014 mobile games used to look good on weak GPUs:
+- diffuse (Lambert) shading instead of PBR and image-based light, with a hemisphere light for ambient
+- a soft blob shadow under the runner instead of a shadow map
+- pool water without the planar mirror (a sky-tint reflection instead)
+- no post-processing
+
+Colours, textures and neon stay the same. Measured in Episode 2 at 720p: Full = 148 draw calls and 736k triangles per frame; Lite (TV) = 49 draw calls and 344k triangles. In Episode 6: 115 / 1035k vs 46 / 460k.
+
+## Android TV (TV APK)
+- **TV mode** switches on automatically. The TV APK tags the WebView user agent with `ShivBabaTV`; other TV browsers are detected by user agent, and `?tv` forces it.
+- Settings in TV mode: Lite graphics, low textures, little scenery, 30 FPS, auto resolution 360–720p (TV GPUs cannot drive 1080p 3D), overscan-safe margins, no touch buttons.
+- Target hardware is the realme Smart TV class: MediaTek quad-core Cortex-A53, Mali-G52 GPU, 1–2 GB RAM, 1080p/4K panel.
+- **Requirement: WebGL 2 (OpenGL ES 3.0).** The 32"/43" realme Smart TV with a **Mali-470 GPU is OpenGL ES 2.0 only**, so the game cannot run there, and it says so on screen. Mali-G52 models (realme 4K / X series) are fine. Keep "Android System WebView" updated from the Play Store.
+- **Remote:** LEFT / RIGHT run, UP or OK jump (hold = higher), DOWN slide, BACK pause / go back / exit from the menu. In menus the D-pad moves a highlighted button and OK presses it. Gamepads work too.
 
 ## Controls
 | Action | Keyboard | Touch | Gamepad |
@@ -39,6 +59,8 @@ URL options: `?res=auto|480|720|1080`, `?fps=30|48|60`, `?q=high|low`, `?nopost`
 | Jump (hold = higher) | Space, W, Up | JUMP | A |
 | Slide | S, Down, Shift | SLIDE | B |
 | Pause | P, Esc | pause button | Start |
+
+TV remote: see *Android TV* above.
 
 ## Episodes
 **Every episode is one continuous course, with no separate rounds.** The episodes unlock in order: finish an episode within its **qualify time** (the 2-star time) to open the next one. A locked card shows the time you need. `?unlockall` opens everything for testing.

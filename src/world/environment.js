@@ -202,7 +202,9 @@ export class Environment {
     const [wc, sc] = WATER[theme] || WATER.pool;
     const u = this.water.mesh.material.uniforms;
     u.waterColor.value.set(wc); u.shallowColor.value.set(sc);
+    const was = this.night;
     this.setNight(theme === 'night');
+    if (was === this.night) this.applyAmbient();
   }
 
   setNight(on) {
@@ -243,6 +245,19 @@ export class Environment {
       if (this.nightGroup) this.nightGroup.visible = false;
     }
     u.sunDirection.value.copy(this.sunDir);
+    u.skyTint.value.set(on ? 0x1c2c58 : 0x6aa8cc);
+    this.applyAmbient();
+  }
+
+  /** Lite graphics has no image-based lighting, so a hemisphere light carries the ambient. */
+  setLite(on) { this.lite = on; this.applyAmbient(); }
+
+  applyAmbient() {
+    const h = this.hemi;
+    if (this.night) { h.color.set(0x6a8cff); h.groundColor.set(0x05070c); h.intensity = this.lite ? 1.6 : 0.9; }
+    else if (this.lite) { h.color.set(0xe4f1ff); h.groundColor.set(0x6c7a58); h.intensity = 1.9; }
+    else h.intensity = 0;
+    if (this.lite) this.sun.castShadow = false;
   }
 
   /** stadium floodlights, a lit city skyline behind the hills, and searchlight beams */
@@ -301,6 +316,7 @@ export class Environment {
   /** Flag cloth animated in the vertex shader (no per-frame CPU work). */
   wavingMaterial(map) {
     const m = new THREE.MeshStandardMaterial({ map, side: THREE.DoubleSide, roughness: 0.8 });
+    m.userData.noLite = true; // custom waving vertex shader + per-theme texture swaps
     const time = this.flagTime;
     m.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = time;
@@ -320,6 +336,7 @@ export class Environment {
     const board = new THREE.Mesh(new THREE.PlaneGeometry(16, 4), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.25 }));
     board.userData.keep = true; // its texture changes per episode, so keep it out of the static merge
     this.boardMat = board.material;
+    this.boardMat.userData.noLite = true; // texture swapped per episode
     this.boardTex = { pool: tex };
     const z = -30, x = 52, y = terrainHeight(x, z);
     board.position.set(x, y + 6.5, z);

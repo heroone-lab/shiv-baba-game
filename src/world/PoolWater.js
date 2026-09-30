@@ -18,6 +18,7 @@ uniform vec3 sunDirection;
 uniform vec3 eye;
 uniform vec3 waterColor;
 uniform vec3 shallowColor;
+uniform vec3 skyTint;
 uniform vec4 ripples[${MAX_RIPPLES}];
 
 varying vec4 mirrorCoord;
@@ -86,7 +87,12 @@ void main() {
   float spec = pow( max( 0.0, dot( eyeDir, refl ) ), 220.0 ) * 3.0;
 
   vec2 distortion = n.xz * ( 0.001 + 1.0 / dist ) * distortionScale;
+#ifdef NO_MIRROR
+  // no planar mirror: reflect a sky gradient that follows the ripples (cheap, no second scene render)
+  vec3 reflection = skyTint * ( 0.78 + 0.35 * clamp( n.x * 2.5 + n.z * 1.5 + 0.5, 0.0, 1.0 ) );
+#else
   vec3 reflection = texture2D( mirrorSampler, mirrorCoord.xy / mirrorCoord.w + distortion ).rgb;
+#endif
 
   float theta = max( dot( eyeDir, n ), 0.0 );
   float fresnel = 0.02 + 0.98 * pow( 1.0 - theta, 5.0 );
@@ -98,7 +104,11 @@ void main() {
   body *= mix( 0.5, 1.0, shadow );
   body *= 0.55 + 0.45 * max( sunDirection.y, 0.0 );
 
+#ifdef NO_MIRROR
+  vec3 col = mix( body, reflection, clamp( fresnel * 0.8 + 0.04, 0.0, 0.55 ) );
+#else
   vec3 col = mix( body, reflection, clamp( fresnel * 1.1 + 0.05, 0.0, 0.92 ) );
+#endif
   col += sunColor * spec * shadow;
   gl_FragColor = vec4( col, alpha );
 
@@ -124,6 +134,7 @@ export class PoolWater {
     const m = water.material;
     m.fragmentShader = fragmentShader;
     m.uniforms.shallowColor = { value: new THREE.Color(0x2cc6c9) };
+    m.uniforms.skyTint = { value: new THREE.Color(0x6aa8cc) };
     m.uniforms.ripples = { value: Array.from({ length: MAX_RIPPLES }, () => new THREE.Vector4(0, 0, -99, 0)) };
     m.uniforms.size.value = 3.0;
     m.defines = { CAUSTIC_STEPS: 3 };
@@ -137,11 +148,21 @@ export class PoolWater {
 
   /** cheap = 2 normal-map samples and 2 caustic iterations instead of 4 and 3 */
   setCheap(on) {
+    this.cheap = on;
     const m = this.mesh.material;
     const d = on ? { CHEAP_WATER: 1, CAUSTIC_STEPS: 2 } : { CAUSTIC_STEPS: 3 };
+    if (this.noMirror) d.NO_MIRROR = 1;
     if (JSON.stringify(d) === JSON.stringify(m.defines)) return;
     m.defines = d;
     m.needsUpdate = true;
+  }
+
+  /** turn the planar reflection off (skips re-rendering the scene every frame) */
+  setMirror(on) {
+    if (!this.mirrorRender) this.mirrorRender = this.mesh.onBeforeRender;
+    this.mesh.onBeforeRender = on ? this.mirrorRender : () => {};
+    this.noMirror = !on;
+    this.setCheap(!!this.cheap);
   }
 
   addRipple(x, z, strength = 1) {

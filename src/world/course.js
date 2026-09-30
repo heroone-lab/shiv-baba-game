@@ -417,6 +417,7 @@ export class Course {
     m.rotation.set(-Math.PI / 2, 0, 0);
     m.rotateOnWorldAxis(new THREE.Vector3(0, 0, 1), Math.atan(d.slope || 0));
     m.userData.dynamic = true; // keep its own material (animated glow)
+    mat.userData.noLite = true;
     this.group.add(m);
     b.mat = mat;
   }

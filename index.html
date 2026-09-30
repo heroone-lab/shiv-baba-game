@@ -35,7 +35,8 @@
         </div>
         <p id="gpuWarn" class="small">Your browser is drawing the game without the graphics card (software rendering), so it will be slow.<br>
           Turn ON <b>Settings → System → "Use graphics acceleration when available"</b> and restart the browser.</p>
-        <p class="small help desktop-only">D / Right: run · A / Left: back · SPACE: jump (hold = higher) · S / Down: slide · P: pause</p>
+        <p class="small help desktop-only no-tv">D / Right: run · A / Left: back · SPACE: jump (hold = higher) · S / Down: slide · P: pause</p>
+        <p class="small help tv-only">Remote: LEFT / RIGHT run · UP or OK jump (hold = higher) · DOWN slide · BACK pause</p>
         <p class="small help touch-only">Arrows: run · JUMP (hold = higher) · SLIDE under low beams</p>
       </section>
 
@@ -69,7 +70,7 @@
       <section id="pause" class="screen dim">
         <h2>PAUSED</h2>
         <button class="btn primary" data-act="resume">RESUME</button>
-        <button class="btn" data-act="restart">RESTART ROUND</button>
+        <button class="btn" data-act="restart">RESTART EPISODE</button>
         <button id="pauseSettings" class="btn">SETTINGS</button>
         <button class="btn" data-act="menu">MAIN MENU</button>
       </section>
@@ -80,6 +81,7 @@
         <div class="set-grid">
           <label>Resolution</label><div class="seg" id="setRes"></div>
           <label>Frame rate</label><div class="seg" id="setFps"></div>
+          <label>Graphics</label><div class="seg" id="setGfx"></div>
           <label>Texture detail</label><div class="seg" id="setDetail"></div>
           <label>Show FPS</label><div class="seg" id="setFpsShow"></div>
           <label>Sound</label><div class="seg" id="setSound"></div>
