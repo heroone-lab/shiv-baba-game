@@ -10,7 +10,7 @@ npm run build          # production web build -> dist/
 npx cap sync android   # copy dist/ into the Android project
 cd android && ./gradlew assembleDebug   # APK -> android/app/build/outputs/apk/debug/
 ```
-A pre-built debug APK is in `release/ShivBaba-debug.apk`.
+**Download the Android APK:** [apk/ShivBaba-v0.1.0-debug.apk](apk/ShivBaba-v0.1.0-debug.apk). Open it, tap "Download raw file", then install it on your phone (allow "Install unknown apps"). This is a debug build, not for the Play Store.
 
 URL options: `?q=high|low` (quality), `?nopost` (no post-processing), `?autostart`.
 
