@@ -51,7 +51,12 @@ class Obstacle {
   collide(c) { c.node.userData.prev = new THREE.Matrix4(); this.colliders.push(c); return c; }
   savePrev() { for (const c of this.colliders) c.node.userData.prev.copy(c.node.matrixWorld); }
   update(t) {}
-  finish() { this.group.updateMatrixWorld(true); this.savePrev(); }
+  finish() {
+    // moving parts must stay separate objects; everything else can be merged
+    for (const k of ['pivot', 'rot', 'rotor']) if (this[k]) this[k].userData.dynamic = true;
+    this.group.updateMatrixWorld(true);
+    this.savePrev();
+  }
 }
 
 // O1 / O5 — log on a horizontal axle with padded paddles sweeping the deck.

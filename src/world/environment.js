@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PoolWater } from './PoolWater.js';
 import { boxUV } from './materials.js';
 import { logoTexture, flagTexture } from './textures.js';
+import { mergeStatic, noReflect } from './merge.js';
 
 // Deterministic pseudo random so the scenery is identical every run.
 export function rng(seed = 1) {
@@ -69,12 +70,16 @@ export class Environment {
     this.water.mesh.position.set(60, 0, -20);
     scene.add(this.water.mesh);
 
+    this.staticGroup = new THREE.Group();
+    scene.add(this.staticGroup);
+    this.flagTime = { value: 0 };
     this.buildBank(mats);
     this.buildTerrain(mats);
     this.buildVegetation(assets, q, rand);
     this.buildFlags(rand);
     this.buildSignage();
     this.buildLaneFloats();
+    mergeStatic(this.staticGroup, (o) => !o.userData.keep);
   }
 
   buildBank(mats) {
@@ -85,7 +90,7 @@ export class Environment {
     const tile = new THREE.Mesh(new THREE.BoxGeometry(len, 1.4, 0.2), mats.tile);
     tile.position.set(60, -0.4, BANK_Z + 0.02);
     coping.receiveShadow = tile.receiveShadow = true;
-    this.scene.add(coping, tile);
+    this.staticGroup.add(coping, tile);
   }
 
   buildTerrain(mats) {
@@ -102,8 +107,8 @@ export class Environment {
     boxUV(geo, 0.12);
     const ground = new THREE.Mesh(geo, mats.grass);
     ground.position.set(cx, 0, cz);
-    ground.receiveShadow = true;
-    this.scene.add(ground);
+    ground.receiveShadow = false; // far behind the bank, outside the shadow frustum anyway
+    this.staticGroup.add(ground);
   }
 
   buildVegetation(assets, q, rand) {
@@ -129,18 +134,22 @@ export class Environment {
         inst.frustumCulled = false;
         inst.receiveShadow = true;
         if (src.material.map) src.material.map.anisotropy = 4;
+        noReflect(inst); // far behind the bank: not worth a second render in the water
         this.scene.add(inst);
       }
     };
     place(assets.tree, q.trees, -24, -60, 0.8, 1.25);
-    place(assets.shrub, q.tier === 'high' ? 60 : 30, -16.8, -21, 1.2, 2.2);
-    place(assets.rock, q.tier === 'high' ? 26 : 14, -15.9, -17, 0.6, 1.3);
+    place(assets.shrub, q.shrubs, -16.8, -21, 1.3, 2.4);
+    place(assets.rock, q.rocks, -15.9, -17, 0.7, 1.4);
   }
 
   buildFlags(rand) {
     const colors = [['#e3262b', '#ffffff'], ['#ffc21a', '#e3262b'], ['#1c7fd6', '#ffffff'], ['#f07a12', '#ffffff']];
     const poleMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e8, metalness: 0.7, roughness: 0.35 });
     const poleGeo = new THREE.CylinderGeometry(0.05, 0.06, 7, 8);
+    const flagMats = colors.map(([c, st]) => this.wavingMaterial(flagTexture(c, st)));
+    const geo = new THREE.PlaneGeometry(1.9, 1.15, 14, 6);
+    geo.translate(0.95, 0, 0);
     for (let i = 0; i < 16; i++) {
       const x = -12 + i * 8.5;
       const z = BANK_Z - 2.2;
@@ -148,15 +157,29 @@ export class Environment {
       const pole = new THREE.Mesh(poleGeo, poleMat);
       pole.position.set(x, y + 3.5, z);
       pole.castShadow = true;
-      const [c, s] = colors[i % colors.length];
-      const geo = new THREE.PlaneGeometry(1.9, 1.15, 14, 6);
-      geo.translate(0.95, 0, 0);
-      const mat = new THREE.MeshStandardMaterial({ map: flagTexture(c, s), side: THREE.DoubleSide, roughness: 0.8 });
-      const flag = new THREE.Mesh(geo, mat);
+      this.staticGroup.add(pole);
+      const flag = new THREE.Mesh(geo, flagMats[i % flagMats.length]);
       flag.position.set(x + 0.05, y + 6.3, z);
-      this.scene.add(pole, flag);
-      this.flags.push({ mesh: flag, base: geo.attributes.position.array.slice(), phase: rand() * 6.28 });
+      flag.rotation.y = rand() * 0.3 - 0.15; // desync neighbouring flags that share a material
+      flag.layers.set(1);
+      this.scene.add(flag);
     }
+  }
+
+  /** Flag cloth animated in the vertex shader (no per-frame CPU work). */
+  wavingMaterial(map) {
+    const m = new THREE.MeshStandardMaterial({ map, side: THREE.DoubleSide, roughness: 0.8 });
+    const time = this.flagTime;
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = time;
+      sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `
+        vec3 transformed = position;
+        float k = position.x / 1.9;
+        vec4 wp = modelMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        float ph = wp.x * 0.37;
+        transformed.z = sin(uTime * 5.0 + position.x * 3.2 + ph) * 0.22 * k + sin(uTime * 3.1 + position.y * 2.0 + ph) * 0.05 * k;`);
+    };
+    return m;
   }
 
   buildSignage() {
@@ -170,11 +193,11 @@ export class Environment {
     for (const dx of [-6, 6]) {
       const leg = new THREE.Mesh(legGeo, legMat);
       leg.position.set(x + dx, y + 4.25 - 0.2, z - 0.2);
-      this.scene.add(leg);
+      this.staticGroup.add(leg);
     }
     const back = new THREE.Mesh(new THREE.BoxGeometry(16.3, 4.3, 0.2), legMat);
     back.position.set(x, y + 6.5, z - 0.12);
-    this.scene.add(board, back);
+    this.staticGroup.add(board, back);
   }
 
   buildLaneFloats() {
@@ -187,6 +210,7 @@ export class Environment {
     this.floats = [];
     for (const [z, mat, offset] of [[4.2, red, 0], [4.2, white, 1], [-7.5, red, 0], [-7.5, white, 1]]) {
       const inst = new THREE.InstancedMesh(geo, mat, n / 2);
+      inst.layers.set(1);
       this.floats.push({ inst, z, offset });
       this.scene.add(inst);
     }
@@ -214,18 +238,7 @@ export class Environment {
     this.sun.target.position.set(focus.x + 4, focus.y, 0);
     this.sun.position.copy(this.sun.target.position).addScaledVector(this.sunDir, 40);
     this.sun.target.updateMatrixWorld();
-    // flags wave
-    const t = this.water.time;
-    for (const f of this.flags) {
-      const p = f.mesh.geometry.attributes.position;
-      for (let i = 0; i < p.count; i++) {
-        const bx = f.base[i * 3], by = f.base[i * 3 + 1];
-        const k = bx / 1.9;
-        p.setZ(i, Math.sin(t * 5 + bx * 3.2 + f.phase) * 0.22 * k + Math.sin(t * 3.1 + by * 2 + f.phase) * 0.05 * k);
-      }
-      p.needsUpdate = true;
-      f.mesh.geometry.computeVertexNormals();
-    }
+    this.flagTime.value = this.water.time;
     this.updateFloats(dt);
   }
 }

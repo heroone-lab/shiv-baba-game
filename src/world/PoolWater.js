@@ -28,19 +28,24 @@ vec4 getNoise( vec2 uv ) {
   vec2 uv1 = uv / 107.0 - vec2( time / -19.0, time / 31.0 );
   vec2 uv2 = uv / vec2( 8907.0, 9803.0 ) + vec2( time / 101.0, time / 97.0 );
   vec2 uv3 = uv / vec2( 1091.0, 1027.0 ) - vec2( time / 109.0, time / -113.0 );
+#ifdef CHEAP_WATER
+  vec4 noise = texture2D( normalSampler, uv0 ) + texture2D( normalSampler, uv1 );
+  return noise - 1.0;
+#else
   vec4 noise = texture2D( normalSampler, uv0 ) + texture2D( normalSampler, uv1 ) +
                texture2D( normalSampler, uv2 ) + texture2D( normalSampler, uv3 );
   return noise * 0.5 - 1.0;
+#endif
 }
 
 float caustic( vec2 p, float t ) {
   vec2 q = p;
   float v = 0.0;
-  for ( int i = 0; i < 3; i++ ) {
+  for ( int i = 0; i < CAUSTIC_STEPS; i++ ) {
     q += vec2( sin( q.y * 1.7 + t * 0.9 ), cos( q.x * 1.9 - t * 0.8 ) ) * 0.45;
     v += abs( sin( q.x * 2.1 ) + sin( q.y * 2.3 ) );
   }
-  return pow( clamp( 1.0 - v / 4.5, 0.0, 1.0 ), 2.5 );
+  return pow( clamp( 1.0 - v / ( 1.5 * float( CAUSTIC_STEPS ) ), 0.0, 1.0 ), 2.5 );
 }
 
 #include <common>
@@ -121,12 +126,22 @@ export class PoolWater {
     m.uniforms.shallowColor = { value: new THREE.Color(0x2cc6c9) };
     m.uniforms.ripples = { value: Array.from({ length: MAX_RIPPLES }, () => new THREE.Vector4(0, 0, -99, 0)) };
     m.uniforms.size.value = 3.0;
+    m.defines = { CAUSTIC_STEPS: 3 };
     m.needsUpdate = true;
     water.rotation.x = -Math.PI / 2;
     water.receiveShadow = true;
     this.mesh = water;
     this.rippleIdx = 0;
     this.time = 0;
+  }
+
+  /** cheap = 2 normal-map samples and 2 caustic iterations instead of 4 and 3 */
+  setCheap(on) {
+    const m = this.mesh.material;
+    const d = on ? { CHEAP_WATER: 1, CAUSTIC_STEPS: 2 } : { CAUSTIC_STEPS: 3 };
+    if (JSON.stringify(d) === JSON.stringify(m.defines)) return;
+    m.defines = d;
+    m.needsUpdate = true;
   }
 
   addRipple(x, z, strength = 1) {

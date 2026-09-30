@@ -136,3 +136,18 @@ body.touch .desktop-only { display: none; }
 #fpsMeter.show { display: block; }
 #fpsMeter[data-level="ok"] { color: #ffd84a; }
 #fpsMeter[data-level="bad"] { color: #ff6a5a; }
+
+#setGpu { opacity: .7; margin-top: -6px; max-width: 560px; }
+#setGpu.warn, #gpuWarn { color: #ffb4a8; opacity: 1; }
+#gpuWarn { display: none; max-width: 560px; background: #6a0d0dcc; border: 2px solid #ff6a5a; border-radius: 12px; padding: 8px 14px; }
+#gpuWarn.show { display: block; }
+.seg button { min-width: 64px; }
+
+#settings { justify-content: safe center; overflow-y: auto; }
+@media (max-height: 640px) {
+  #settings { gap: 6px; padding: 10px; }
+  #settings h2 { font-size: 30px; margin: 0; }
+  .set-grid { gap: 6px 12px; padding: 10px 14px; }
+  .seg button { padding: 7px 10px; font-size: 13px; }
+  #settings .btn.primary { padding: 8px 26px; font-size: 22px; }
+}

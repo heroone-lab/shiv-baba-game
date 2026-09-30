@@ -23,6 +23,21 @@ export class Materials {
     this.rope = new THREE.MeshStandardMaterial({ color: 0xcdb58a, roughness: 0.9 });
     this.concrete = new THREE.MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.85 });
     this.tile = new THREE.MeshPhysicalMaterial({ color: 0x1b8fc4, roughness: 0.2, clearcoat: 0.8, clearcoatRoughness: 0.15 });
+    this.fancyMats = [this.padRed, this.padOrange, this.padYellow, this.padBlue, this.padTeal, this.padWhite, this.tile];
+    this.fancy = true;
+  }
+
+  /** clearcoat + sheen cost a lot of per-pixel lighting; only the 1080p budget keeps them */
+  setFancy(on) {
+    if (on === this.fancy) return;
+    this.fancy = on;
+    for (const m of this.fancyMats) {
+      m.userData.cc ??= m.clearcoat; m.userData.sh ??= m.sheen;
+      m.clearcoat = on ? m.userData.cc : 0;
+      m.sheen = on ? m.userData.sh : 0;
+      m.roughness = on ? m.userData.r ?? m.roughness : (m.userData.r ??= m.roughness) * 0.85; // keep some gloss without clearcoat
+      m.needsUpdate = true;
+    }
   }
 
   pbr(set, { color = 0xffffff, normalScale = 1 }) {

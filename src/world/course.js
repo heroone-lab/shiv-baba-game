@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { DECK_TOP as T } from '../config.js';
 import { PaddleLog, VerticalBlocker, SwingingBall, GapSpinner, SwingGate, SlideBeam, woodPost, boxDeckGeometry } from './obstacles.js';
 import { logoTexture } from './textures.js';
+import { mergeStatic } from './merge.js';
 
 // ROUND 01 — wood / turquoise. Obstacle IDs O1–O7 match the reference addendum.
 // Platforms are listed left→right; the runner travels +X along z = 0.
@@ -58,6 +59,9 @@ export class Course {
       .map((p) => ({ x: p.x0 + 1.4, y: p.topAt(p.x0 + 1.4) }));
     this.buildArch(mats, 1.5, T, 'START');
     this.buildArch(mats, this.finishX, T + 1.2, 'FINISH');
+    // bake every non-moving mesh (decks, posts, rims, towers, arches) into a few draw calls
+    const isDynamic = (o) => { for (let p = o; p && p !== this.group; p = p.parent) if (p.userData.dynamic) return true; return false; };
+    this.mergeStats = mergeStatic(this.group, (o) => !isDynamic(o));
     this.time = 0;
   }
 

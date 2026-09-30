@@ -16,7 +16,7 @@ import { Audio } from './audio.js';
 import { Particles } from './fx/particles.js';
 import { ROUND_TIME_LIMIT } from './config.js';
 import { testCapsule } from './collision.js';
-import { loadSettings, saveSettings, RES_PRESETS, RESOLUTIONS, FPS_OPTIONS, pixelRatioFor, FrameLimiter, FpsMeter } from './settings.js';
+import { loadSettings, saveSettings, RES_PRESETS, RESOLUTIONS, FPS_OPTIONS, pixelRatioFor, FrameLimiter, FpsMeter, AutoResolution, gpuInfo } from './settings.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
@@ -30,6 +30,8 @@ export class Game {
     Object.assign(this.q, this.displayBudget());
     this.limiter = new FrameLimiter(this.settings.fps);
     this.fpsMeter = new FpsMeter();
+    this.autoRes = new AutoResolution(IS_TOUCH ? 540 : 720);
+    this.frameNo = 0;
     this.slowTime = 0;
     this.mode = 'loading'; // loading | menu | intro | countdown | play | paused | done
     this.input = new Input();
@@ -61,6 +63,7 @@ export class Game {
     this.mode = 'menu';
     setTimeout(() => $('loading').remove(), 500);
     $('fpsMeter').classList.toggle('show', this.settings.showFps);
+    if (this.gpu.software) $('gpuWarn').classList.add('show');
     if (params.has('autostart')) this.startRound(params.has('skipintro'));
     window.__game = this;
     window.__dbg = { THREE, testCapsule };
@@ -76,26 +79,39 @@ export class Game {
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.NoToneMapping; // handled by the post stack
     this.renderer = r;
+    this.gpu = gpuInfo(r.getContext());
+    r.shadowMap.autoUpdate = false; // updated manually (every frame or every other frame)
+    r.shadowMap.needsUpdate = true;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 900);
     this.camera.position.set(0, 4, 13);
+    this.camera.layers.enable(1); // layer 1 = seen directly but not in the water reflection
   }
 
   displayBudget() {
     const p = RES_PRESETS[this.settings.resolution];
     // MSAA is expensive on phone GPUs; SMAA gives similar edges for far less
     const msaa = IS_TOUCH ? 0 : p.msaa;
-    return { shadowMap: p.shadowMap, waterRes: p.waterRes, bloom: p.bloom, msaa };
+    return { shadowMap: p.shadowMap, waterRes: p.waterRes, post: p.post, bloom: p.bloom, msaa, fancy: p.fancy, cheapWater: p.cheapWater, shadowEvery: p.shadowEvery };
   }
+
+  /** render height currently targeted (auto mode follows the dynamic-resolution controller) */
+  targetHeight() { return this.settings.resolution === 'auto' ? this.autoRes.height : this.settings.resolution; }
 
   currentPixelRatio() {
     if (params.has('pr')) return +params.get('pr');
-    return pixelRatioFor(this.settings.resolution).pixelRatio;
+    return pixelRatioFor(this.targetHeight()).pixelRatio;
   }
 
   initPost() {
-    if (params.has('nopost')) return;
     if (this.composer) { this.composer.dispose(); this.composer = null; }
+    if (params.has('nopost') || !this.q.post) {
+      // no post stack: let the main pass tone-map directly (much cheaper on weak GPUs)
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.toneMappingExposure = 1.05;
+      return;
+    }
+    this.renderer.toneMapping = THREE.NoToneMapping;
     const c = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType, multisampling: this.q.msaa });
     c.addPass(new RenderPass(this.scene, this.camera));
     const fx = [];
@@ -111,6 +127,7 @@ export class Game {
 
   buildWorld(assets) {
     this.mats = new Materials(assets);
+    this.mats.setFancy(this.q.fancy);
     this.env = new Environment(this.renderer, this.scene, assets, this.mats, this.q);
     this.course = new Course(this.scene, this.mats, ROUND01);
     this.character = new Character(assets.hero);
@@ -143,6 +160,7 @@ export class Game {
     this.player.respawn(this.course.checkpoints[0]);
     this.player.freeze();
     this.cam.snap(this.player, this.course);
+    this.env.water.setCheap(this.q.cheapWater);
     this.initPost();
     this.buildProgressTicks();
     this.cpIndex = 0;
@@ -197,7 +215,11 @@ export class Game {
         box.appendChild(b);
       }
     };
-    seg('setRes', RESOLUTIONS, (v) => `${v}p`, () => this.settings.resolution, (v) => { this.settings.resolution = v; this.applyDisplay(); });
+    seg('setRes', RESOLUTIONS, (v) => (v === 'auto' ? 'Auto' : `${v}p`), () => this.settings.resolution, (v) => {
+      this.settings.resolution = v;
+      if (v === 'auto') this.autoRes.reset(Math.min(720, pixelRatioFor(1080).nativeShort));
+      this.applyDisplay();
+    });
     seg('setFps', FPS_OPTIONS, (v) => `${v} FPS`, () => this.settings.fps, (v) => { this.settings.fps = v; this.applyDisplay(); });
     const saved = localStorage.getItem('sb_quality');
     seg('setDetail', ['auto', 'high', 'low'], (v) => (v === 'auto' ? `Auto (${detectQuality() === 'high' && !saved ? 'High' : saved ? saved : 'Low'})` : v === 'high' ? 'High' : 'Low'),
@@ -212,11 +234,18 @@ export class Game {
   }
 
   refreshSettingsInfo() {
-    const { renderShort, nativeShort } = pixelRatioFor(this.settings.resolution);
+    const auto = this.settings.resolution === 'auto';
+    const { renderShort, nativeShort } = pixelRatioFor(this.targetHeight());
     const w = Math.round(renderShort * Math.max(innerWidth, innerHeight) / Math.min(innerWidth, innerHeight));
-    const capped = renderShort < this.settings.resolution;
-    $('setNote').textContent = `Rendering ${w} × ${renderShort}` + (capped ? ` (your screen is ${nativeShort}p, so ${this.settings.resolution}p is capped)` : '') +
-      ` · target ${this.settings.fps} FPS`;
+    const capped = !auto && renderShort < this.settings.resolution;
+    let note = auto
+      ? `Auto: resolution changes by itself (360p–1080p) to hold ${this.settings.fps} FPS. Now ${w} × ${renderShort}.`
+      : `Rendering ${w} × ${renderShort}` + (capped ? ` (your screen is ${nativeShort}p, so ${this.settings.resolution}p is capped)` : '') + ` · target ${this.settings.fps} FPS`;
+    $('setNote').textContent = note;
+    const g = $('setGpu');
+    g.textContent = `GPU: ${this.gpu.short || 'unknown'}`;
+    g.classList.toggle('warn', this.gpu.software);
+    if (this.gpu.software) g.textContent += ' — software rendering! Turn ON "Use graphics acceleration" in browser settings and restart the browser.';
   }
 
   openSettings(from) {
@@ -234,7 +263,8 @@ export class Game {
     saveSettings(this.settings);
     this.limiter.set(this.settings.fps);
     const budget = this.displayBudget();
-    const needPost = budget.bloom !== this.q.bloom || budget.msaa !== this.q.msaa;
+    const needPost = budget.post !== this.q.post || budget.bloom !== this.q.bloom || budget.msaa !== this.q.msaa;
+    this.env.water.setCheap(budget.cheapWater);
     const sun = this.env.sun;
     if (budget.shadowMap !== this.q.shadowMap) {
       sun.shadow.mapSize.set(budget.shadowMap, budget.shadowMap);
@@ -244,6 +274,7 @@ export class Game {
     if (budget.waterRes !== this.q.waterRes) {
       this.env.water.mesh.material.uniforms.mirrorSampler.value.renderTarget?.setSize(budget.waterRes, budget.waterRes);
     }
+    this.mats.setFancy(budget.fancy);
     Object.assign(this.q, budget);
     this.renderer.setPixelRatio(this.currentPixelRatio());
     if (needPost) this.initPost();
@@ -391,24 +422,39 @@ export class Game {
       this.step(h, i === 0 ? this.input : { ...this.input, jumpPressed: false, slidePressed: false });
     }
     this.visuals(dt);
+    this.frameNo++;
+    if (this.frameNo % this.q.shadowEvery === 0) this.renderer.shadowMap.needsUpdate = true;
     this.render(dt);
   }
 
   trackFps(now) {
     const fps = this.fpsMeter.tick(now);
+    const dtMs = this.lastFrameAt ? now - this.lastFrameAt : 16;
+    this.lastFrameAt = now;
+    if (this.settings.resolution === 'auto' && this.fpsMeter.times.length > 8 && this.mode !== 'paused') {
+      if (this.autoRes.update(dtMs / 1000, fps, this.settings.fps, pixelRatioFor(1080).nativeShort)) {
+        this.renderer.setPixelRatio(this.currentPixelRatio());
+        this.renderer.setSize(innerWidth, innerHeight, false);
+        this.composer?.setSize(innerWidth, innerHeight);
+      }
+    }
     if (this.settings.showFps && (!this.fpsShownAt || now - this.fpsShownAt > 250)) {
       this.fpsShownAt = now;
       const el = $('fpsMeter');
       const ratio = fps / this.settings.fps;
-      el.textContent = `${fps.toFixed(0)} FPS · ${pixelRatioFor(this.settings.resolution).renderShort}p`;
+      const h = pixelRatioFor(this.targetHeight()).renderShort;
+      el.textContent = `${fps.toFixed(0)} / ${this.settings.fps} FPS · ${h}p${this.settings.resolution === 'auto' ? ' auto' : ''}`;
       el.dataset.level = ratio > 0.93 ? 'good' : ratio > 0.75 ? 'ok' : 'bad';
     }
     // gentle hint if the device cannot hold the chosen target during play
     if (this.mode === 'play' && this.fpsMeter.times.length > 20) {
-      this.slowTime = fps < this.settings.fps * 0.8 ? this.slowTime + 1 : 0;
+      const floor = this.settings.resolution === 'auto' && this.autoRes.height > 360;
+      this.slowTime = fps < this.settings.fps * 0.8 && !floor ? this.slowTime + 1 : 0;
       if (this.slowTime === 240 && !this.slowHinted) {
         this.slowHinted = true;
-        this.banner(`<small>Device can't hold ${this.settings.fps} FPS here.<br>Try a lower resolution in Settings.</small>`, 3.5);
+        this.banner(this.gpu.software
+          ? '<small>Browser is using software rendering.<br>Turn ON graphics acceleration in browser settings.</small>'
+          : `<small>Device can't hold ${this.settings.fps} FPS here.<br>Choose Auto or a lower resolution in Settings.</small>`, 4);
       }
     }
   }
@@ -431,6 +477,7 @@ export class Game {
       this.realTime += step;
       this.step(step, inp);
       this.visuals(step);
+      this.renderer.shadowMap.needsUpdate = true;
       t += step;
       if (s.log) log.push(s.log);
     }

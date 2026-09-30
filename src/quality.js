@@ -20,7 +20,9 @@ export function qualitySettings(tier) {
       waterRes: 1024,
       hero: 'models/hero.glb',
       sky: 'env/sky_2k.hdr',
-      trees: 11,
+      trees: 9,
+      shrubs: 36,
+      rocks: 20,
       bloom: true,
       msaa: 4,
     };
@@ -32,7 +34,9 @@ export function qualitySettings(tier) {
     waterRes: 512,
     hero: 'models/hero_mobile.glb',
     sky: 'env/sky_1k.hdr',
-    trees: 6,
+    trees: 5,
+    shrubs: 18,
+    rocks: 10,
     bloom: true,
     msaa: 0,
   };

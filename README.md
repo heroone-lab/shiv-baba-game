@@ -12,23 +12,25 @@ npm run build          # production web build -> dist/
 npx cap sync android   # copy dist/ into the Android project
 cd android && ./gradlew assembleDebug   # APK -> android/app/build/outputs/apk/debug/
 ```
-**Download the Android APK:** [apk/ShivBaba-v0.2.0-debug.apk](apk/ShivBaba-v0.2.0-debug.apk). Open it, tap "Download raw file", then install it on your phone (allow "Install unknown apps"). This is a debug build, not for the Play Store.
+**Download the Android APK:** [apk/ShivBaba-v0.3.0-debug.apk](apk/ShivBaba-v0.3.0-debug.apk). Open it, tap "Download raw file", then install it on your phone (allow "Install unknown apps"). This is a debug build, not for the Play Store.
 
 ## Display settings (menu → SETTINGS, also from Pause)
-| Resolution | Shadow map | Water reflection | Bloom | Anti-aliasing |
-|---|---|---|---|---|
-| 480p | 1024 | 256 | off | SMAA |
-| 720p | 1024 | 512 | on | SMAA |
-| 1080p | 2048 | 1024 | on | 4× MSAA on desktop, SMAA on phones |
+| Resolution | Shadow map | Water reflection | Water shader | Post effects (bloom, grading, SMAA) | Pad clearcoat |
+|---|---|---|---|---|---|
+| Auto | follows 720p | | | | |
+| 480p | 1024, every 2nd frame | 256 | cheap | off (tone mapping only) | off |
+| 720p | 1024 | 512 | full | on | off |
+| 1080p | 2048 | 1024 | full | on | on |
 
-- **Resolution** sets the render size of the screen's short side. It is capped at the screen's native pixels.
+- **Auto** (default): dynamic resolution between 360p and 1080p that holds the chosen FPS. It drops quickly when frames are missed and rises slowly when there is headroom.
+- **480p / 720p / 1080p**: fixed render height of the screen's short side, capped at native pixels.
 - **Frame rate**: 30 / 48 / 60 FPS cap. Correct on 60, 90, 120 and 144 Hz screens.
-- Gameplay does not depend on frame rate. The simulation runs in steps of ≤ 1/60 s, so jump height and speed are the same at every FPS.
-- **Show FPS**: live meter (green = on target, yellow/red = below).
-- **Texture detail**: Auto / High / Low. Changing it reloads the page.
-- Defaults: desktop 1080p @ 60, phones 720p @ 30. Settings are saved on the device.
+- Gameplay does not depend on frame rate. The simulation runs in steps of ≤ 1/60 s, and jump height is identical at every FPS.
+- **Show FPS**: `actual / target FPS · render height`. Green = on target, yellow/red = the device cannot keep up.
+- **GPU line** in Settings shows which graphics chip the browser uses. If it is a software renderer (SwiftShader, "Microsoft Basic Render"), the game warns you to enable hardware acceleration.
+- Performance work: static geometry merged (draw calls 246 → ~114). Lane floats, flags and vegetation are left out of the water reflection. Flags wave on the GPU.
 
-URL options: `?res=480|720|1080`, `?fps=30|48|60`, `?q=high|low`, `?nopost`, `?autostart`.
+URL options: `?res=auto|480|720|1080`, `?fps=30|48|60`, `?q=high|low`, `?nopost`, `?autostart`.
 
 ## Controls
 | Action | Keyboard | Touch | Gamepad |
