@@ -1,0 +1,12 @@
+[{"path":"/index.html?q=low&pr=0.4&nopost","w":640,"h":360,"steps":[
+ {"eval":"(()=>{const g=__game; g.showScreen(null); g.mode='play'; g.player.release(); window.T=(name,x,y,sec,fn)=>{g.player.respawn({x,y}); g.player.invuln=0; g.player.maxX=x; let states=new Set(), hit=null; g.simulate(sec,(t,p)=>{states.add(p.state); if(p.state==='hit'&&!hit) hit=p.lastHit+'@'+p.pos.x.toFixed(1); return fn(t,p)}); const p=g.player; return name+': x='+p.pos.x.toFixed(2)+' y='+p.pos.y.toFixed(2)+' state='+p.state+' seen='+[...states].join(',')+' hit='+hit}; return 'ok'})()"},
+ {"eval":"T('gapjump',8,1.4,1.6,(t,p)=>({move:1,jump:p.pos.x>11.2&&p.pos.x<12.5}))"},
+ {"eval":"T('shortjump-fail',8,1.4,2.5,(t,p)=>({move:1,jump:p.pos.x>10.0&&p.pos.x<10.1}))"},
+ {"eval":"T('O1 runin',15,1.4,4,(t,p)=>({move:1}))"},
+ {"eval":"T('slide beam',61.5,2.1,1.6,(t,p)=>({move:1,slide:p.pos.x>63.2}))"},
+ {"eval":"T('beam no slide',61.5,2.1,1.6,(t,p)=>({move:1}))"},
+ {"eval":"T('finish',91.5,1.4,3.5,(t,p)=>({move:1,jump:p.pos.x>94.4&&p.pos.x<95.2}))"},
+ {"eval":"({mode:__game.mode, anim:__game.character.currentName})"},
+ {"eval":"T('ramp',55.6,1.4,1.0,(t,p)=>({move:1}))"},
+ {"eval":"T('O4 gap',49.5,1.4,2.2,(t,p)=>({move:1,jump:p.pos.x>51.3&&p.pos.x<52.2}))"}
+]}]

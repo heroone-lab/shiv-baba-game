@@ -1,0 +1,11 @@
+{
+  "appId": "com.shivbaba.obstaclecourse",
+  "appName": "SHIV BABA",
+  "webDir": "dist",
+  "backgroundColor": "#06245a",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
+}

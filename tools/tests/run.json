@@ -1,0 +1,6 @@
+[{"path":"/index.html?q=high&pr=0.6","w":1280,"h":720,"steps":[
+ {"eval":"(()=>{const g=__game; g.showScreen(null); g.showHud(true); g.mode='play'; g.player.release(); g.simulate(0.4,()=>({})); return g.player.state})()"},
+ {"shot":"shots/g_start.png"},
+ {"eval":"(()=>{const g=__game; g.simulate(1.6, ()=>({move:1})); const p=g.player; return {x:p.pos.x.toFixed(2),y:p.pos.y.toFixed(2),st:p.state,anim:g.character.currentName}})()"},
+ {"shot":"shots/g_run.png"}
+]}]

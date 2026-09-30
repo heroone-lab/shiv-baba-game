@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SHIV BABA</string>
+    <string name="title_activity_main">SHIV BABA</string>
+    <string name="package_name">com.shivbaba.obstaclecourse</string>
+    <string name="custom_url_scheme">com.shivbaba.obstaclecourse</string>
+</resources>

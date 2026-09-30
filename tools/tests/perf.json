@@ -1,0 +1,3 @@
+[{"path":"/index.html?q=low&pr=0.5","w":960,"h":540,"steps":[
+ {"eval":"(()=>{const g=__game; g.frozenForTest=true; g.renderer.info.autoReset=false; g.renderer.info.reset(); g.render(0.016); const i=g.renderer.info.render; const top={}; g.scene.traverse(o=>{if(o.isMesh&&o.geometry.index){const n=o.geometry.index.count/3*(o.isInstancedMesh?o.count:1); const k=(o.name||o.material.name||o.type).slice(0,20); top[k]=(top[k]||0)+n}}); return {calls:i.calls, drawnTris:i.triangles, top:Object.entries(top).sort((a,b)=>b[1]-a[1]).slice(0,8)}})()"}
+]}]

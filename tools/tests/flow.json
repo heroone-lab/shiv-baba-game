@@ -1,0 +1,7 @@
+[{"path":"/index.html?q=low&pr=0.35&autostart","w":960,"h":540,"steps":[
+ {"until":"window.__game && __game.mode==='intro'"},{"wait":1500},{"shot":"shots/f_intro.png"},
+ {"until":"__game.mode==='play'"},
+ {"eval":"(()=>{const g=__game; g.player.respawn({x:93,y:1.4}); g.player.maxX=93; g.simulate(3,(t,p)=>({move:1,jump:p.pos.x>94.4&&p.pos.x<97.8})); g.frozenForTest=false; return g.mode})()"},
+ {"until":"document.getElementById('result').classList.contains('show')"},{"wait":800},{"shot":"shots/f_result.png"},
+ {"eval":"({res:document.getElementById('resTitle').textContent, t:document.getElementById('resTime').textContent, best:localStorage.getItem('sb_best_L01')})"}
+]}]

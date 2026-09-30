@@ -1,0 +1,51 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#556}</style></head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+
+const q = new URLSearchParams(location.search);
+const anim = q.get('anim') || '';
+const t = parseFloat(q.get('t') || '0.3');
+const yaw = parseFloat(q.get('yaw') || '0');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.background = new THREE.Color(0x556070);
+const dl = new THREE.DirectionalLight(0xffffff, 2.5); dl.position.set(2, 4, 3); scene.add(dl);
+const cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.01, 100);
+
+const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+loader.load(q.get('model') || '/models/hero.glb', (g) => {
+  const root = g.scene;
+  scene.add(root);
+  const info = { anims: g.animations.map(a => a.name + ':' + a.duration.toFixed(2)) };
+  let mixer;
+  if (anim) {
+    mixer = new THREE.AnimationMixer(root);
+    const clip = g.animations.find(a => a.name === anim);
+    if (clip) { mixer.clipAction(clip).play(); mixer.setTime(t); }
+  }
+  root.rotation.y = yaw;
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  root.traverse(o => { if (o.isSkinnedMesh) { o.computeBoundingBox?.(); box.expandByObject(o, true); o.frustumCulled = false; } });
+  info.box = [box.min.toArray(), box.max.toArray()];
+  const c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3());
+  const zoom = parseFloat(q.get('zoom') || '1');
+  const focusY = q.get('focus') === 'head' ? box.max.y - s.y * 0.08 : c.y;
+  cam.position.set(c.x, focusY, c.z + (s.y * 2.0) / zoom);
+  cam.lookAt(c.x, focusY, c.z);
+  cam.near = s.y * 0.01; cam.far = s.y * 50; cam.updateProjectionMatrix();
+  renderer.render(scene, cam);
+  window.__info = info; window.__done = true;
+}, undefined, (e) => { window.__info = { error: String(e) }; window.__done = true; });
+</script>
+</body></html>

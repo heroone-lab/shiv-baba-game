@@ -1,0 +1,9 @@
+[{"path":"/index.html?q=high&pr=0.6","w":1280,"h":720,"steps":[
+ {"eval":"(()=>{const g=__game; g.showScreen(null); g.showHud(true); g.mode='play'; g.player.release(); window.P=(x,sec,fn)=>{g.time=0; g.mode='play'; g.player.respawn({x,y:g.course.supportAt(x,0).topAt(x)}); g.player.invuln=5; g.cam.snap(g.player,g.course); g.simulate(sec,fn||(()=>({move:1}))); return g.player.state}; return 1})()"},
+ {"wait":800},
+ {"eval":"P(16,0.5)"},{"shot":"shots/v_o1.png"},
+ {"eval":"P(31,0.6)"},{"shot":"shots/v_o2.png"},
+ {"eval":"P(44,0.5)"},{"shot":"shots/v_o3.png"},
+ {"eval":"P(50.5,0.38,(t)=>({move:1,jump:t>0.1}))"},{"shot":"shots/v_o4.png"},
+ {"eval":"P(86,0.5)"},{"shot":"shots/v_o6.png"}
+]}]
