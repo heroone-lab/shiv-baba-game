@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { woodPost, steelPost, boxDeckGeometry, V } from './obstacles.js';
+import { woodPost, steelPost, boxDeckGeometry, shadowed, V } from './obstacles.js';
 import { boxUV } from './materials.js';
 import { logoTexture, chevronTexture, boostTexture, coinTexture, skullTexture, pirateFlagTexture } from './textures.js';
 import { mergeStatic } from './merge.js';
 import { sphere } from '../collision.js';
+import { skinMats, themeMaterials } from './themes.js';
+import { glowTexture } from './themeTextures.js';
 
 const PLAYER_R = 0.28;
 const TAU = Math.PI * 2;
@@ -19,12 +21,20 @@ const TAU = Math.PI * 2;
  *   block   stepping crate standing in the water
  *   round   round deck (ship-wheel spinner)
  *   nest    crow's-nest finish platform
- *   ball    big skull ball on a pole: a curved, bobbing, slippery surface
+ *   ball    big ball on a pole: a curved, bobbing, slippery surface (skull / stone / burger / mushroom / orb)
+ *   lift    deck on a piston that rises and sinks (amp, period, phase)
+ *   blink   glass panel that vanishes for part of its cycle (period, on = fraction solid, phase)
+ * Every theme (pool, pirate, steel, food, candy, night) dresses the same kinds differently.
  */
 export class Course {
-  constructor(scene, mats, def) {
+  constructor(scene, baseMats, def) {
     this.def = def;
     this.theme = def.theme || 'pool';
+    const mats = skinMats(baseMats, this.theme);
+    this.mats = mats;
+    this.tm = themeMaterials(baseMats, this.theme);
+    this.style = courseStyle(mats, this.tm, this.theme);
+    this.movers = [];
     this.scene = scene;
     this.group = new THREE.Group();
     scene.add(this.group);
@@ -75,6 +85,8 @@ export class Course {
       tower: { half: 1.6, thick: 0.4, width: 2.9 },
       finish: { half: 1.93, thick: 0.38, width: 3.4 },
       block: { half: 0.95, thick: o.t0 + 0.6, width: 1.9 },
+      lift: { half: 1.2, thick: 0.4, width: 2.2 },
+      blink: { half: 1.2, thick: 0.18, width: 2.2 },
       round: { half: Math.min(w / 2, 2.2), thick: 0.45, width: w },
       nest: { half: Math.min(w / 2, 2.2), thick: 0.5, width: w },
       ball: { half: 0, thick: 0, width: w },
@@ -95,7 +107,7 @@ export class Course {
         const dx = x - o.cx, R = o.r + PLAYER_R;
         return o.centerY() + Math.sqrt(Math.max(0, R * R - dx * dx)) - PLAYER_R;
       };
-      o.standable = (x) => Math.abs(x - o.cx) < o.r * 0.85;
+      o.standable = (x) => Math.abs(x - o.cx) < o.r * 0.95;
     } else {
       o.topAt = (x) => {
         const u = THREE.MathUtils.clamp((x - o.x0) / (o.x1 - o.x0), 0, 1);
@@ -103,77 +115,163 @@ export class Course {
       };
       o.standable = (x) => x >= o.x0 - 0.12 && x <= o.x1 + 0.12;
     }
+    if (kind === 'lift') {
+      const amp = p.amp ?? 0.9, per = p.period ?? 3.2, ph = p.phase ?? 0;
+      o.dyn = true;
+      o.offset = () => amp * Math.sin((TAU * course.time) / per + ph);
+      o.topAt = (x) => o.t0 + o.offset();
+    }
+    if (kind === 'blink') {
+      const per = p.period ?? 3.0, on = p.on ?? 0.62, ph = p.phase ?? 0;
+      o.cycle = () => ((((course.time + ph) % per) + per) % per) / per;
+      o.active = () => o.cycle() < on;
+      o.warn = () => { const u = o.cycle(); return u > on - 0.22 && u < on; };
+    }
+    o.active ??= () => true;
     o.slope = kind === 'ball' ? 0 : (o.t1 - o.t0) / (o.x1 - o.x0);
     return o;
   }
 
   buildPlatform(mats, p) {
-    const pirate = this.theme === 'pirate';
+    const st = this.style;
     switch (p.kind) {
       case 'block': return this.buildBlock(mats, p);
       case 'round': case 'nest': return this.buildRound(mats, p);
       case 'ball': return this.buildBall(mats, p);
+      case 'lift': return this.buildLift(mats, p);
+      case 'blink': return this.buildBlink(mats, p);
       case 'tower': this.buildLattice(mats, p.x0, p.x1, p.t0 - p.thick, p.width); break;
       default: break;
     }
     const len = Math.hypot(p.x1 - p.x0, p.t1 - p.t0);
-    const ang = Math.atan2(p.t1 - p.t0, p.x1 - p.x0);
-    const width = p.width;
-    const deck = new THREE.Group();
+    const deck = this.deckMesh(mats, p, len);
     deck.position.set((p.x0 + p.x1) / 2, (p.t0 + p.t1) / 2, 0);
-    deck.rotation.z = ang;
+    deck.rotation.z = Math.atan2(p.t1 - p.t0, p.x1 - p.x0);
     this.group.add(deck);
+    if (p.kind === 'ramp') { this.buildLattice(mats, p.x0, p.x0 + (p.x1 - p.x0) * 0.55, null, p.width, p); return; }
+    if (p.kind === 'tower') return;
+    this.buildSupports(mats, p, st);
+  }
 
-    const planks = new THREE.Mesh(boxDeckGeometry(len, p.thick, width), pirate ? mats.darkWood : mats.planks);
+  /** slab + side rims + end caps (+ chevron decal), centred at the origin, sloped by the caller */
+  deckMesh(mats, p, len) {
+    const st = this.style, width = p.width;
+    const deck = new THREE.Group();
+    const planks = new THREE.Mesh(boxDeckGeometry(len, p.thick, width), st.deck);
     planks.position.y = -p.thick / 2;
     planks.castShadow = planks.receiveShadow = true;
     deck.add(planks);
-
-    // padded rims (pool look) or chunky timber edges (pirate look)
-    const rimMat = pirate ? mats.bark : mats.padBlue;
-    const rimGeo = pirate ? boxDeckGeometry(len + 0.02, 0.3, 0.24) : new RoundedBoxGeometry(len + 0.02, 0.34, 0.26, 3, 0.1);
+    const rimGeo = st.rounded ? new RoundedBoxGeometry(len + 0.02, st.rimH, 0.26, 3, 0.1) : boxDeckGeometry(len + 0.02, st.rimH, 0.24);
     for (const s of [-1, 1]) {
-      const rim = new THREE.Mesh(rimGeo, rimMat);
-      rim.position.set(0, pirate ? -0.13 : -0.14, s * (width / 2 + 0.1));
+      const rim = new THREE.Mesh(rimGeo, st.rim);
+      rim.position.set(0, st.rimY, s * (width / 2 + 0.1));
       rim.castShadow = rim.receiveShadow = true;
       deck.add(rim);
     }
-    const capGeo = pirate ? boxDeckGeometry(0.24, 0.34, width + 0.42) : new RoundedBoxGeometry(0.24, 0.36, width + 0.42, 3, 0.1);
+    const capGeo = st.rounded ? new RoundedBoxGeometry(0.24, 0.36, width + 0.42, 3, 0.1) : boxDeckGeometry(0.24, 0.34, width + 0.42);
     for (const s of [-1, 1]) {
-      const cap = new THREE.Mesh(capGeo, pirate ? mats.bark : mats.padTeal);
+      const cap = new THREE.Mesh(capGeo, st.cap);
       cap.position.set(s * (len / 2 + 0.06), -0.17, 0);
       cap.castShadow = cap.receiveShadow = true;
       deck.add(cap);
     }
     if (p.chev || p.kind === 'ramp') {
-      // painted chevrons (slide sections) as a decal just above the planks
-      const tex = chevronTexture(p.kind === 'ramp' ? 'rgba(250,244,230,0.95)' : 'rgba(236,222,190,0.85)');
+      const tex = chevronTexture(st.chevron[p.kind === 'ramp' ? 0 : 1]);
       tex.repeat.set(len / 1.1, 1);
       this.textures.push(tex);
-      const decal = new THREE.Mesh(new THREE.PlaneGeometry(len, width - 0.1), new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+      const decal = new THREE.Mesh(new THREE.PlaneGeometry(len, width - 0.1), new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, emissive: st.chevGlow ? 0xffffff : 0x000000, emissiveMap: st.chevGlow ? tex : null, emissiveIntensity: st.chevGlow ? 1.4 : 0 }));
       decal.rotation.x = -Math.PI / 2; decal.position.y = 0.004; decal.receiveShadow = true;
       deck.add(decal);
     }
-    if (p.kind === 'ramp') { this.buildLattice(mats, p.x0, p.x0 + (p.x1 - p.x0) * 0.55, null, width, p); return; }
-    if (p.kind === 'tower') return;
-    // timber supports down into the water with cross beams
-    const n = Math.max(2, Math.round((p.x1 - p.x0) / 3.4) + 1);
+    return deck;
+  }
+
+  /** posts from the water up to the deck: timber piles, steel pipes with feet, silver columns, neon pylons */
+  buildSupports(mats, p, st) {
+    const width = p.width;
+    const n = Math.max(2, Math.round((p.x1 - p.x0) / st.postSpacing) + 1);
     for (let i = 0; i < n; i++) {
       const x = THREE.MathUtils.lerp(p.x0 + 0.5, p.x1 - 0.5, i / (n - 1));
       const yTop = p.topAt(x) - p.thick;
-      for (const z of [-(width / 2 - 0.25), width / 2 - 0.25]) this.group.add(woodPost(mats, x, z, -2.5, yTop, pirate ? 0.2 : 0.15));
-      const cross = new THREE.Mesh(boxDeckGeometry(0.22, 0.26, width - 0.2), mats.woodPost);
-      cross.position.set(x, yTop - 0.13, 0);
-      cross.castShadow = true;
-      this.group.add(cross);
-      if (pirate) {
-        // iron collars on the piles, like the reference
-        for (const z of [-(width / 2 - 0.25), width / 2 - 0.25]) {
-          const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.3, 14), mats.darkSteel);
+      const zs = st.centrePost ? [0] : [-(width / 2 - 0.25), width / 2 - 0.25];
+      for (const z of zs) {
+        if (st.post === 'wood') this.group.add(woodPost(mats, x, z, -2.5, yTop, st.postR));
+        else {
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(st.postR, st.postR, yTop + 2.5, 16), st.postMat);
+          post.position.set(x, (yTop - 2.5) / 2, z); post.castShadow = true; this.group.add(post);
+        }
+        if (st.collar) {
+          const collar = new THREE.Mesh(new THREE.CylinderGeometry(st.postR + 0.07, st.postR + 0.07, 0.3, 16), st.collar);
           collar.position.set(x, 0.15, z); collar.castShadow = true; this.group.add(collar);
         }
+        if (st.foot) { // bulbous pipe foot just above the waterline (Episode 3 look)
+          const foot = new THREE.Mesh(new THREE.CylinderGeometry(st.postR * 1.9, st.postR * 1.2, 0.8, 18), st.foot);
+          foot.position.set(x, 0.5, z); foot.castShadow = true; this.group.add(foot);
+        }
+        if (st.rings) { // glowing rings up a tall pylon (night)
+          for (let y = 1.5; y < yTop - 0.4; y += 2.2) {
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(st.postR + 0.03, 0.035, 6, 20), st.rings);
+            ring.rotation.x = Math.PI / 2; ring.position.set(x, y, z); this.group.add(ring);
+          }
+        }
+      }
+      if (!st.centrePost) {
+        const cross = new THREE.Mesh(boxDeckGeometry(0.22, 0.26, width - 0.2), st.crossMat);
+        cross.position.set(x, yTop - 0.13, 0);
+        cross.castShadow = true;
+        this.group.add(cross);
       }
     }
+  }
+
+  buildLift(mats, p) {
+    const node = new THREE.Group();
+    node.userData.dynamic = true;
+    const len = p.x1 - p.x0;
+    const deck = this.deckMesh(mats, p, len);
+    node.add(deck);
+    // telescoping piston under the deck (moves with it; its foot stays hidden in the water)
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, p.t0 + 3, 16), mats.steelBright);
+    rod.position.y = -p.thick - (p.t0 + 3) / 2; node.add(rod);
+    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.5, 18), this.style.collar || mats.darkSteel);
+    sleeve.position.y = -p.thick - 0.3; node.add(sleeve);
+    if (this.tm.cyan || this.style.liftGlow) {
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(len + 0.1, 0.06, 0.06), this.style.liftGlow || this.tm.gold);
+      for (const z of [-1, 1]) { const e = edge.clone(); e.position.set(0, -0.02, z * (p.width / 2 + 0.24)); node.add(e); }
+    }
+    node.position.set((p.x0 + p.x1) / 2, p.t0, 0);
+    shadowed(node);
+    this.group.add(node);
+    this.movers.push(() => { node.position.y = p.topAt(0); });
+  }
+
+  buildBlink(mats, p) {
+    const node = new THREE.Group();
+    node.userData.dynamic = true;
+    const len = p.x1 - p.x0;
+    const glass = this.tm.glass || new THREE.MeshPhysicalMaterial({ color: 0x9adfff, roughness: 0.1, transparent: true, opacity: 0.6, clearcoat: 1 });
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(len, p.thick, p.width), glass);
+    slab.position.y = -p.thick / 2; node.add(slab);
+    const frameMat = this.tm.cyan || mats.steelBright;
+    for (const z of [-1, 1]) {
+      const f = new THREE.Mesh(new THREE.BoxGeometry(len + 0.08, 0.1, 0.1), frameMat);
+      f.position.set(0, -0.05, z * (p.width / 2 + 0.05)); node.add(f);
+    }
+    for (const x of [-1, 1]) {
+      const f = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, p.width + 0.2), frameMat);
+      f.position.set(x * (len / 2 + 0.04), -0.05, 0); node.add(f);
+    }
+    node.position.set((p.x0 + p.x1) / 2, p.t0, 0);
+    this.group.add(node);
+    // thin hanger cables so it doesn't look like it floats on nothing
+    const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 30, 4), mats.darkSteel);
+    cable.position.set((p.x0 + p.x1) / 2, p.t0 + 15, -p.width / 2 - 0.1);
+    this.group.add(cable);
+    this.movers.push(() => {
+      const on = p.active();
+      node.visible = on && !(p.warn() && Math.floor(this.time * 12) % 2);
+      node.scale.setScalar(on ? 1 : 0.001);
+    });
   }
 
   /** steel lattice legs under the start tower / upper half of the slide ramp */
@@ -195,73 +293,113 @@ export class Course {
   }
 
   buildBlock(mats, p) {
+    const st = this.style, cx = (p.x0 + p.x1) / 2;
     const h = p.t0 + 0.6, w = p.x1 - p.x0;
-    const crate = new THREE.Mesh(boxUV(new THREE.BoxGeometry(w, h, p.width), 0.45), mats.darkWood);
-    crate.position.set((p.x0 + p.x1) / 2, p.t0 - h / 2, 0);
+    const crate = new THREE.Mesh(boxUV(new THREE.BoxGeometry(w, h, p.width), 0.45), st.block);
+    crate.position.set(cx, p.t0 - h / 2, 0);
     crate.castShadow = crate.receiveShadow = true;
     this.group.add(crate);
-    const trim = new THREE.Mesh(boxDeckGeometry(w + 0.06, 0.12, p.width + 0.06), mats.bark);
-    trim.position.set((p.x0 + p.x1) / 2, p.t0 - 0.06, 0);
+    const trim = new THREE.Mesh(boxDeckGeometry(w + 0.06, 0.12, p.width + 0.06), st.blockTrim);
+    trim.position.set(cx, p.t0 - 0.06, 0);
     trim.castShadow = true;
     this.group.add(trim);
     for (const y of [0.25, p.t0 * 0.55]) {
-      const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.04, 0.1, p.width + 0.04), mats.darkSteel);
-      band.position.set((p.x0 + p.x1) / 2, y, 0); this.group.add(band);
+      const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.04, 0.1, p.width + 0.04), st.blockBand);
+      band.position.set(cx, y, 0); this.group.add(band);
     }
   }
 
   buildRound(mats, p) {
+    const st = this.style;
     const r = (p.x1 - p.x0) / 2, cx = (p.x0 + p.x1) / 2;
-    const disk = new THREE.Mesh(boxUV(new THREE.CylinderGeometry(r, r, p.thick, 40), 0.45), mats.darkWood);
+    const nest = p.kind === 'nest';
+    const topMat = nest ? st.finishTop : st.roundTop;
+    const disk = new THREE.Mesh(boxUV(new THREE.CylinderGeometry(r, r * (nest && st.finishTaper ? 0.92 : 1), p.thick, 48), 0.45), [st.roundSide, topMat, st.roundSide]);
     disk.position.set(cx, p.t0 - p.thick / 2, 0);
     disk.castShadow = disk.receiveShadow = true;
     this.group.add(disk);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.07, 8, 48), p.kind === 'nest' ? mats.brass : mats.darkSteel);
+    if (nest && st.targetRings) { // bullseye finish pad
+      [[r * 0.82, st.targetRings[0]], [r * 0.58, st.targetRings[1]], [r * 0.34, st.targetRings[0]], [r * 0.14, st.targetRings[1]]].forEach(([rr, m], i) => {
+        const ring = new THREE.Mesh(new THREE.CircleGeometry(rr, 48), m);
+        ring.rotation.x = -Math.PI / 2; ring.position.set(cx, p.t0 + 0.003 + i * 0.001, 0); ring.receiveShadow = true;
+        this.group.add(ring);
+      });
+    }
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.07, 8, 48), nest ? st.finishRing : st.collar || mats.darkSteel);
     ring.rotation.x = Math.PI / 2; ring.position.set(cx, p.t0 - 0.05, 0);
     this.group.add(ring);
-    this.group.add(woodPost(mats, cx, 0, -2.5, p.t0 - p.thick, 0.45));
-    for (const a of [0.8, 2.35, 3.9, 5.45]) this.group.add(woodPost(mats, cx + Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.7, -2.5, p.t0 - p.thick, 0.14));
-    if (p.kind === 'nest') {
-      // crow's nest: railing around the back half, mast and a skull flag
-      const rail = new THREE.Mesh(new THREE.TorusGeometry(r - 0.1, 0.06, 8, 40, Math.PI), mats.darkWood);
-      rail.rotation.x = Math.PI / 2; rail.rotation.z = Math.PI; rail.position.set(cx, p.t0 + 0.95, 0);
-      this.group.add(rail);
-      for (let k = 0; k <= 6; k++) {
-        const a = Math.PI + (k / 6) * Math.PI;
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.95, 8), mats.darkWood);
-        post.position.set(cx + Math.cos(a) * (r - 0.1), p.t0 + 0.47, Math.sin(a) * (r - 0.1));
-        this.group.add(post);
-      }
-      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 6, 12), mats.darkWood);
-      mast.position.set(cx + 0.6, p.t0 + 3, -r + 0.2); mast.castShadow = true;
-      this.group.add(mast);
-      const ft = pirateFlagTexture(); this.textures.push(ft);
-      const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.1), new THREE.MeshStandardMaterial({ map: ft, side: THREE.DoubleSide, roughness: 0.85 }));
-      flag.position.set(cx + 1.55, p.t0 + 5.4, -r + 0.2);
-      this.group.add(flag);
-      const sk = skullTexture('#2a1d14'); this.textures.push(sk);
-      const plaque = new THREE.Mesh(new THREE.CircleGeometry(0.55, 32), new THREE.MeshStandardMaterial({ map: sk, roughness: 0.6 }));
-      plaque.position.set(cx, p.t0 - p.thick * 0.5, r + 0.01);
-      this.group.add(plaque);
+    const stemH = p.t0 - p.thick + 2.5;
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(st.post === 'wood' ? 0.45 : r * 0.35, st.post === 'wood' ? 0.5 : r * 0.42, stemH, 24), st.post === 'wood' ? mats.bark : st.roundStem);
+    stem.position.set(cx, p.t0 - p.thick - stemH / 2, 0); stem.castShadow = true;
+    this.group.add(stem);
+    if (st.post === 'wood') for (const a of [0.8, 2.35, 3.9, 5.45]) this.group.add(woodPost(mats, cx + Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.7, -2.5, p.t0 - p.thick, 0.14));
+    if (nest && this.theme === 'pirate') this.buildCrowsNest(mats, p, cx, r);
+    if (nest && this.theme === 'night') {
+      const glow = new THREE.Mesh(new THREE.TorusGeometry(r + 0.05, 0.08, 8, 64), this.tm.gold);
+      glow.rotation.x = Math.PI / 2; glow.position.set(cx, p.t0 + 0.02, 0); this.group.add(glow);
     }
   }
 
+  buildCrowsNest(mats, p, cx, r) {
+    const rail = new THREE.Mesh(new THREE.TorusGeometry(r - 0.1, 0.06, 8, 40, Math.PI), mats.darkWood);
+    rail.rotation.x = Math.PI / 2; rail.rotation.z = Math.PI; rail.position.set(cx, p.t0 + 0.95, 0);
+    this.group.add(rail);
+    for (let k = 0; k <= 6; k++) {
+      const a = Math.PI + (k / 6) * Math.PI;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.95, 8), mats.darkWood);
+      post.position.set(cx + Math.cos(a) * (r - 0.1), p.t0 + 0.47, Math.sin(a) * (r - 0.1));
+      this.group.add(post);
+    }
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 6, 12), mats.darkWood);
+    mast.position.set(cx + 0.6, p.t0 + 3, -r + 0.2); mast.castShadow = true;
+    this.group.add(mast);
+    const ft = pirateFlagTexture(); this.textures.push(ft);
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.1), new THREE.MeshStandardMaterial({ map: ft, side: THREE.DoubleSide, roughness: 0.85 }));
+    flag.position.set(cx + 1.55, p.t0 + 5.4, -r + 0.2);
+    this.group.add(flag);
+    const sk = skullTexture('#2a1d14'); this.textures.push(sk);
+    const plaque = new THREE.Mesh(new THREE.CircleGeometry(0.55, 32), new THREE.MeshStandardMaterial({ map: sk, roughness: 0.6 }));
+    plaque.position.set(cx, p.t0 - p.thick * 0.5, r + 0.01);
+    this.group.add(plaque);
+  }
+
   buildBall(mats, p) {
+    const st = this.style;
     const node = new THREE.Group();
     node.userData.dynamic = true;
     node.position.set(p.cx, p.centerY(), 0);
     this.group.add(node);
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(p.r, 40, 28), mats.iron);
-    ball.castShadow = ball.receiveShadow = true;
-    node.add(ball);
-    const sk = skullTexture('#16161a'); this.textures.push(sk);
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(p.r + 0.004, 20, 16, Math.PI / 2 - 0.55, 1.1, Math.PI / 2 - 0.55, 1.1),
-      new THREE.MeshStandardMaterial({ map: sk, roughness: 0.4, metalness: 0.6 }));
-    node.add(cap);
-    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 0.3, 16), mats.darkSteel);
+    const look = p.look || st.ball;
+    if (look === 'burger') {
+      // stacked burger: domed bun, lettuce, patty, cheese, bottom bun (all inside the collision sphere)
+      const t = this.tm;
+      const top = new THREE.Mesh(new THREE.SphereGeometry(p.r, 40, 20, 0, TAU, 0, Math.PI / 2), t.bun); top.scale.y = 0.85; top.position.y = -0.05; node.add(top);
+      const lettuce = new THREE.Mesh(new THREE.CylinderGeometry(p.r * 1.0, p.r * 0.98, 0.14, 32), t.lettuce); lettuce.position.y = -0.14; node.add(lettuce);
+      const cheese = new THREE.Mesh(new THREE.BoxGeometry(p.r * 1.5, 0.06, p.r * 1.5), t.cheese); cheese.position.y = -0.24; cheese.rotation.y = 0.5; node.add(cheese);
+      const patty = new THREE.Mesh(new THREE.CylinderGeometry(p.r * 0.97, p.r * 0.97, 0.3, 32), t.patty); patty.position.y = -0.42; node.add(patty);
+      const bot = new THREE.Mesh(new THREE.SphereGeometry(p.r * 0.96, 40, 12, 0, TAU, Math.PI / 2, Math.PI / 2), t.bun); bot.scale.y = 0.55; bot.position.y = -0.58; node.add(bot);
+    } else {
+      const matFor = { skull: mats.iron, stone: this.tm.stone, mushroom: this.tm.mushroom, orb: this.tm.padPink, mint: this.tm.mint }[look] || mats.iron;
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(p.r, 40, 28), matFor);
+      if (look === 'mushroom') { ball.scale.y = 0.82; ball.position.y = 0.08 * p.r; }
+      node.add(ball);
+      if (look === 'skull') {
+        const sk = skullTexture('#16161a'); this.textures.push(sk);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(p.r + 0.004, 20, 16, Math.PI / 2 - 0.55, 1.1, Math.PI / 2 - 0.55, 1.1),
+          new THREE.MeshStandardMaterial({ map: sk, roughness: 0.4, metalness: 0.6 }));
+        node.add(cap);
+      }
+      if (look === 'orb') {
+        const band = new THREE.Mesh(new THREE.TorusGeometry(p.r * 1.0, 0.06, 8, 48), this.tm.cyan);
+        band.rotation.x = Math.PI / 2; node.add(band);
+      }
+    }
+    node.traverse((o) => { if (o.isMesh) o.castShadow = o.receiveShadow = true; });
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 0.3, 16), st.ballCollar);
     collar.position.y = -p.r - 0.05; node.add(collar);
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 4, 14), mats.steelBright);
-    pole.position.y = -p.r - 2.1; node.add(pole);
+    const poleLen = p.t0 + 3;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, poleLen, 14), st.ballPole);
+    pole.position.y = -p.r - poleLen / 2; node.add(pole);
     const col = sphere(node, V(0, 0, 0), p.r);
     col.node.userData.prev = new THREE.Matrix4();
     p.node = node;
@@ -332,7 +470,8 @@ export class Course {
     // cantilever gantry: one post behind the deck so nothing blocks the side camera
     const g = new THREE.Group();
     const pirate = this.theme === 'pirate';
-    const mat = pirate ? mats.darkWood : label === 'FINISH' ? mats.padRed : mats.padBlue;
+    const st = this.style;
+    const mat = label === 'FINISH' ? st.archFinish : st.archStart;
     const h = top + 4.9 + 1;
     const post = new THREE.Mesh(new RoundedBoxGeometry(0.5, h, 0.5, 3, 0.12), mat);
     post.position.set(x, -1 + h / 2, -2.3);
@@ -340,13 +479,13 @@ export class Course {
     arm.position.set(x, top + 4.6, -1.2);
     post.castShadow = arm.castShadow = true;
     g.add(post, arm);
-    const bg = pirate ? (label === 'FINISH' ? ['#8a1408', '#2a0a04'] : ['#3a2414', '#1a0f08']) : label === 'FINISH' ? ['#d8321e', '#8a1408'] : ['#1c7fd6', '#0a3f7a'];
+    const bg = label === 'FINISH' ? st.bannerFinish : st.bannerStart;
     const tex = logoTexture({ w: 1024, h: 256, bg, sub: label });
     this.textures.push(tex);
-    const banner = new THREE.Mesh(new RoundedBoxGeometry(4.9, 1.2, 0.3, 3, 0.1), pirate ? mats.bark : mats.padWhite);
+    const banner = new THREE.Mesh(new RoundedBoxGeometry(4.9, 1.2, 0.3, 3, 0.1), pirate ? mats.bark : st.bannerFrame);
     banner.position.set(x, top + 4.55, 0);
     banner.castShadow = true;
-    const face = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 1.15), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.15 }));
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 1.15), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: this.theme === 'night' ? 1.2 : 0.15 }));
     face.position.set(x, top + 4.55, 0.16);
     g.add(banner, face);
     if (label === 'FINISH') {
@@ -372,6 +511,7 @@ export class Course {
       o.update(this.time);
       o.group.updateMatrixWorld(true);
     }
+    for (const f of this.movers) f();
     for (const s of this.solids) {
       const n = s.colliders[0].node;
       n.userData.prev.copy(n.matrixWorld);
@@ -389,8 +529,14 @@ export class Course {
 
   /** platform whose footprint contains x (and z within the lane) */
   supportAt(x, z) {
-    for (const p of this.platforms) if (Math.abs(z) <= p.lane && p.standable(x)) return p;
+    for (const p of this.platforms) if (Math.abs(z) <= p.lane && p.standable(x) && p.active()) return p;
     return null;
+  }
+
+  windAt(x) {
+    let w = 0;
+    for (const o of this.obstacles) if (o.windAt && Math.abs(o.x - x) < 12) w += o.windAt(x, this.time);
+    return w;
   }
 
   boostAt(x) { return this.boosts.find((b) => x >= b.x0 && x <= b.x1) || null; }
@@ -424,4 +570,52 @@ export class Course {
     for (const m of mats) m.dispose();
     for (const t of this.textures) t.dispose();
   }
+}
+
+/** How each theme dresses decks, posts, blocks, balls, finish pads and arches. */
+function courseStyle(mats, t, theme) {
+  const base = {
+    deck: mats.planks, rim: mats.padBlue, cap: mats.padTeal, rounded: true, rimH: 0.34, rimY: -0.14,
+    post: 'wood', postR: 0.15, postMat: mats.steel, postSpacing: 3.4, collar: null, foot: null, rings: null, centrePost: false, crossMat: mats.woodPost,
+    chevron: ['rgba(250,244,230,0.95)', 'rgba(236,222,190,0.85)'], chevGlow: false,
+    block: mats.darkWood, blockTrim: mats.bark, blockBand: mats.darkSteel,
+    roundTop: mats.darkWood, roundSide: mats.darkWood, roundStem: mats.steel, finishTop: mats.darkWood, finishRing: mats.brass, finishTaper: false, targetRings: null,
+    ball: 'skull', ballPole: mats.steelBright, ballCollar: mats.darkSteel,
+    archStart: mats.padBlue, archFinish: mats.padRed, bannerFrame: mats.padWhite,
+    bannerStart: ['#1c7fd6', '#0a3f7a'], bannerFinish: ['#d8321e', '#8a1408'],
+  };
+  if (theme === 'pirate') Object.assign(base, {
+    deck: mats.darkWood, rim: mats.bark, cap: mats.bark, rounded: false, rimH: 0.3, rimY: -0.13, postR: 0.2, collar: mats.darkSteel,
+    archStart: mats.darkWood, archFinish: mats.darkWood, bannerStart: ['#3a2414', '#1a0f08'], bannerFinish: ['#8a1408', '#2a0a04'],
+  });
+  if (theme === 'steel') Object.assign(base, {
+    deck: t.deck, rim: t.gunmetal, cap: t.blackSteel, rimH: 0.42, rimY: -0.1, post: 'steel', postMat: t.blackSteel, postR: 0.22, postSpacing: 4.2,
+    foot: t.blackSteel, centrePost: true, crossMat: t.blackSteel, chevron: ['rgba(240,122,18,0.95)', 'rgba(240,122,18,0.8)'],
+    block: t.gunmetal, blockTrim: t.blackSteel, blockBand: t.hazard, roundTop: t.deck, roundSide: t.gunmetal, roundStem: t.blackSteel,
+    finishTop: mats.padWhite, finishRing: t.blackSteel, targetRings: [mats.padRed, mats.padWhite], ball: 'stone', ballPole: t.yellowPole, ballCollar: t.blackSteel,
+    archStart: t.gunmetal, archFinish: t.blackSteel, bannerFrame: mats.steelBright, bannerStart: ['#5a6068', '#2a2e34'], bannerFinish: ['#f07a12', '#8a3a00'],
+  });
+  if (theme === 'food') Object.assign(base, {
+    deck: t.deck, rim: t.crust, cap: t.crust, rimH: 0.36, post: 'steel', postMat: mats.steelBright, postR: 0.24, postSpacing: 4.6, collar: mats.steel, centrePost: true,
+    crossMat: mats.steel, chevron: ['rgba(255,250,235,0.95)', 'rgba(255,248,225,0.9)'],
+    block: t.cheese, blockTrim: t.crust, blockBand: t.crust, roundTop: t.lettuce, roundSide: t.pickle, roundStem: mats.steelBright,
+    finishTop: t.lettuce, finishRing: t.pickle, finishTaper: true, ball: 'burger', ballPole: mats.steelBright, ballCollar: t.crust,
+    archStart: t.cane, archFinish: t.cane, bannerFrame: t.bread, bannerStart: ['#e8b646', '#a8702e'], bannerFinish: ['#c8141a', '#6a0a0c'],
+  });
+  if (theme === 'candy') Object.assign(base, {
+    deck: t.deck, rim: t.deckDark, cap: t.pinkWhite, rimH: 0.38, post: 'steel', postMat: mats.steelBright, postR: 0.24, postSpacing: 4.4, collar: t.deckDark, centrePost: true,
+    crossMat: mats.steel, chevron: ['rgba(255,255,255,0.95)', 'rgba(255,255,255,0.8)'],
+    block: t.jelly, blockTrim: t.deckDark, blockBand: t.pinkWhite, roundTop: t.cookie, roundSide: t.deckDark, roundStem: t.stalk,
+    finishTop: t.mushroom, finishRing: t.pinkWhite, finishTaper: true, ball: 'mushroom', ballPole: t.lolly, ballCollar: t.stalk,
+    archStart: t.lolly, archFinish: t.lolly, bannerFrame: t.pinkWhite, bannerStart: ['#ff6ab0', '#b8327a'], bannerFinish: ['#8a4ce8', '#4a1a8a'],
+  });
+  if (theme === 'night') Object.assign(base, {
+    deck: t.deck, rim: t.cyan, cap: t.pink, rounded: false, rimH: 0.14, rimY: -0.06, post: 'steel', postMat: t.carbon, postR: 0.2, postSpacing: 4.4, collar: t.carbon,
+    rings: t.cyan, centrePost: true, crossMat: t.carbon, chevron: ['rgba(255,60,200,0.95)', 'rgba(40,232,255,0.9)'], chevGlow: true,
+    block: t.carbon, blockTrim: t.pink, blockBand: t.cyan, roundTop: t.deck, roundSide: t.carbon, roundStem: t.carbon,
+    finishTop: t.deck, finishRing: t.gold, targetRings: [t.padPink, t.padWhiteGlow], ball: 'orb', ballPole: t.carbon, ballCollar: t.cyan,
+    archStart: t.carbon, archFinish: t.carbon, bannerFrame: t.carbon, bannerStart: ['#07203a', '#02060e'], bannerFinish: ['#3a0730', '#0e0210'],
+    liftGlow: t.gold,
+  });
+  return base;
 }

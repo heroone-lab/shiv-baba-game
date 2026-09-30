@@ -1,0 +1,10 @@
+[{"path":"/index.html?pr=0.5&q=low","w":844,"h":390,"touch":true,"steps":[
+ {"eval":"localStorage.setItem('sb_prog_E1',JSON.stringify({best:40,stars:3,goals:['stars3']})); localStorage.setItem('sb_prog_E2',JSON.stringify({best:70,stars:2})); location.reload(); 1"},
+ {"until":"window.__game && __game.mode==='menu'"},{"wait":800},{"shot":"shots/l2_menu_m.png"},
+ {"eval":"(()=>{const g=__game; g.loadRound('E2'); g.run.coins=20; g.run.unlockedNow=true; g.run.goals=[{id:'stars3',text:'Obtain 3 stars',done:true,fresh:true},{id:'slide5',text:'Slide 5 times in the same course',done:false}]; g.run.stars=2; g.time=70; g.showResult(true); return 1})()"},
+ {"wait":2500},{"shot":"shots/l2_res_m.png"}]},
+ {"path":"/index.html?pr=0.5&q=low","w":960,"h":540,"steps":[
+ {"eval":"localStorage.setItem('sb_prog_E1',JSON.stringify({best:40,stars:3,goals:['stars3']})); location.reload(); 1"},
+ {"until":"window.__game && __game.mode==='menu'"},{"wait":800},{"shot":"shots/l2_menu_d.png"}]},
+ {"path":"/index.html?pr=0.5&q=low&unlockall","w":1280,"h":720,"steps":[
+ {"until":"window.__game && __game.mode==='menu'"},{"wait":800},{"shot":"shots/l2_menu_l.png"}]}]

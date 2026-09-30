@@ -50,7 +50,7 @@ export class FollowCamera {
     this.look += (ahead - this.look) * (snap ? 1 : 1 - Math.exp(-dt * 2));
 
     const deck = course.supportAt(p.x, 0);
-    const groundY = deck ? deck.topAt(p.x) : 1.4;
+    const groundY = deck ? deck.topAt(p.x) : course.def.top ?? 1.4;
     // follow height: mostly the ground under the runner, some of the jump, and dip when falling in
     let fy = groundY + 1.1 + Math.max(0, p.y - groundY) * 0.35;
     if (player.state === 'water' || player.state === 'hit') fy = Math.max(0.6, Math.min(fy, p.y + 1.6));
@@ -59,8 +59,10 @@ export class FollowCamera {
     this.focus.y += (fy - this.focus.y) * (snap ? 1 : 1 - Math.exp(-dt * 3));
     this.focus.z += ((player.state === 'hit' || player.state === 'water' ? p.z * 0.4 : 0) - this.focus.z) * k;
 
-    cam.position.set(this.focus.x - 1.1, this.focus.y + 2.0, this.focus.z + dist);
-    cam.lookAt(this.focus.x + 0.5, this.focus.y + 0.05, this.focus.z);
+    // high courses (Episode 6): sit a little higher and look down, so the drop to the water shows
+    const hi = course.def.high ? 1 : 0;
+    cam.position.set(this.focus.x - 1.1, this.focus.y + 2.0 + hi * 1.6, this.focus.z + dist + hi * 0.8);
+    cam.lookAt(this.focus.x + 0.5, this.focus.y + 0.05 - hi * 1.3, this.focus.z);
 
     if (this.shakeAmt > 0.001) {
       this.shakeT += dt * 40;

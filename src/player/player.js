@@ -132,6 +132,7 @@ export class Player {
       this.boostT = 0.5; // short afterglow so the extra speed doesn't fling you past the next deck
     }
     const boost = this.boostT > 0 ? 1.5 : 1;
+    const wind = this.course.windAt(this.pos.x); // gusts from a wind fan push you back
 
     if (this.state === 'slide') {
       this.slideT -= dt;
@@ -155,12 +156,14 @@ export class Player {
         this.vel.x = 2.5 * Math.sign(this.vel.x || 1); // keep scooting until clear
       }
     } else {
-      const target = move * PHYS.runSpeed * boost;
+      const target = move * PHYS.runSpeed * boost * (move > 0 ? 1 - Math.min(0.75, wind / 34) : 1);
       let accel = this.grounded ? (Math.abs(move) > 0.1 ? PHYS.groundAccel : PHYS.groundDecel) : PHYS.airAccel;
       // carried momentum (downhill slide / boost) bleeds off gently instead of stopping dead
       if (Math.abs(this.vel.x) > Math.abs(target) && Math.sign(this.vel.x) === Math.sign(target)) accel = this.grounded ? 14 : 3;
       this.vel.x = approach(this.vel.x, target, accel * dt);
     }
+
+    if (wind) this.vel.x -= wind * dt * (this.grounded ? 0.25 : 1);
 
     // jump with coyote time + input buffering
     this.jumpBuf = input.jumpPressed ? PHYS.jumpBuffer : this.jumpBuf - dt;
@@ -202,7 +205,7 @@ export class Player {
 
     if (this.grounded) {
       const sup = this.course.supportAt(this.pos.x, this.pos.z);
-      if (sup?.kind === 'ball') this.vel.x += ((this.pos.x - sup.cx) / sup.r) * 12 * dt; // slippery: slides off the curve
+      if (sup?.kind === 'ball') this.vel.x += ((this.pos.x - sup.cx) / sup.r) * 8 * dt; // slippery: slides off the curve
     }
     if (this.state === 'ground') {
       const sp = Math.abs(this.vel.x);
@@ -241,10 +244,11 @@ export class Player {
     this.grounded = false;
     for (const d of this.course.platforms) {
       if (d.kind === 'ball') continue; // balls are solid spheres (pushSolids) with a curved top
+      if (!d.active()) continue; // vanished glass panel
       const half = d.half; // plank half-width + rim
       if (Math.abs(p.z) >= half + r || p.x <= d.x0 - r || p.x >= d.x1 + r) continue;
       const top = d.topAt(THREE.MathUtils.clamp(p.x, d.x0, d.x1));
-      const bottom = Math.min(d.t0, d.t1) - d.thick;
+      const bottom = (d.dyn ? top : Math.min(d.t0, d.t1)) - d.thick;
       if (p.y >= top - 1e-4 || p.y + hgt <= bottom) continue; // above or fully below
       const up = top - p.y;
       if (up <= PHYS.stepHeight || (hit && v.y <= 0 && up < 0.6)) {
@@ -289,9 +293,10 @@ export class Player {
         if (!res || res.depth < 0.015) continue;
         const sv = pointVelocity(c.node, c.node.userData.prev, res.point, dt, _sv);
         // landing on top of padding = bounce, anything else knocks you off
-        if (res.normal.y > 0.65 && this.vel.y <= 0.5) {
+        if (!o.noBounce && res.normal.y > 0.65 && this.vel.y <= 0.5) {
           this.pos.addScaledVector(res.normal, res.depth);
-          this.vel.y = 7 + Math.max(0, sv.y) * 0.5;
+          this.vel.y = (o.bounce ?? 7) + Math.max(0, sv.y) * 0.5;
+          this.jumpCut = true; // a bounce has a fixed height: releasing jump must not cut it
           this.vel.x += sv.x * 0.5;
           this.setState('air');
           this.events.bounce?.();

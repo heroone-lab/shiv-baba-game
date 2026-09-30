@@ -1,9 +1,0 @@
-[{"path":"/index.html?pr=0.5&q=low","w":844,"h":390,"touch":true,"steps":[
- {"until":"window.__game && __game.mode==='menu'"},
- {"click":"#epTabs button:nth-child(2)"},{"wait":500},{"shot":"shots/l_menu_m.png"},
- {"eval":"(()=>{const g=__game; g.loadRound('E2R1'); g.run.coins=7; g.run.goals=[{id:'stars3',text:'Obtain 3 stars',done:true,fresh:true},{id:'slide5',text:'Slide 5 times in the same course',done:false}]; g.run.stars=2; g.run.vs='win'; g.time=31.2; g.showResult(true); return 1})()"},
- {"wait":2500},{"shot":"shots/l_res_m.png"}]},
- {"path":"/index.html?pr=0.5&q=low","w":960,"h":540,"steps":[
- {"until":"window.__game && __game.mode==='menu'"},{"wait":500},{"shot":"shots/l_menu_d.png"},
- {"eval":"(()=>{const g=__game; g.loadRound('E2R1'); g.run.coins=7; g.run.goals=[{id:'stars3',text:'Obtain 3 stars',done:true,fresh:true},{id:'slide5',text:'Slide 5 times in the same course',done:false}]; g.run.stars=2; g.run.vs='win'; g.time=31.2; g.showResult(true); return 1})()"},
- {"wait":2500},{"shot":"shots/l_res_d.png"}]}]

@@ -1,0 +1,21 @@
+[{"path":"/index.html?q=low&pr=0.35","w":960,"h":540,"steps":[
+ {"eval":"localStorage.clear(); 1"},
+ {"eval":"location.reload(); 1"},
+ {"until":"window.__game && __game.mode==='menu'"},{"wait":800},{"shot":"shots/f3_menu_locked.png"},
+ {"eval":"({cards:[...document.querySelectorAll('#roundCards button')].map(b=>(b.disabled?'[L] ':'')+b.innerText.replace(/\\n/g,' | '))})"},
+ {"click":"#roundCards button:nth-child(1)"},
+ {"until":"__game.mode==='intro'"},{"wait":1200},{"shot":"shots/f3_intro.png"},
+ {"until":"__game.mode==='play'"},{"wait":500},
+ {"eval":"(()=>{const g=__game; g.player.respawn({x:103.5,y:2.6}); g.player.maxX=103.5; g.simulate(1.5,(t,p)=>({move:p.state==='victory'?0:1})); g.frozenForTest=false; return g.mode+' '+g.player.state+' t='+g.time.toFixed(1)})()"},
+ {"until":"document.getElementById('result').classList.contains('show')"},{"wait":700},{"shot":"shots/f3_unlock.png"},
+ {"eval":"({title:document.getElementById('resTitle').textContent, unlock:document.getElementById('resUnlock').textContent, next:document.getElementById('nextBtn').style.display})"},
+ {"click":"#nextBtn"},{"until":"__game.mode==='intro'"},{"wait":1500},{"shot":"shots/f3_e2_intro.png"},
+ {"eval":"({round:__game.roundId, hud:document.getElementById('hudRound').textContent})"},
+ {"eval":"(()=>{const g=__game; g.toMenu(); return [...document.querySelectorAll('#roundCards button')].map(b=>(b.disabled?'[L] ':'')+b.innerText.replace(/\\n/g,' | '))})()"},
+ {"wait":600},{"shot":"shots/f3_menu_after.png"},
+ {"eval":"(()=>{const g=__game; g.loadRound('E2'); g.startRound(true); return 1})()"},
+ {"until":"__game.mode==='play'"},
+ {"eval":"(()=>{const g=__game; g.time=g.def.qualify+5; const n=g.course.platforms[g.course.platforms.length-1]; g.player.respawn({x:n.x0+0.4,y:n.t0}); g.simulate(1.2,(t,p)=>({move:p.state==='victory'?0:1})); g.frozenForTest=false; return g.mode})()"},
+ {"until":"document.getElementById('result').classList.contains('show')"},{"wait":700},{"shot":"shots/f3_slow.png"},
+ {"eval":"({title:document.getElementById('resTitle').textContent, unlock:document.getElementById('resUnlock').textContent, next:document.getElementById('nextBtn').style.display, e3:[...document.querySelectorAll('#roundCards button')][2].disabled})"}
+]}]

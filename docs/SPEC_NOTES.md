@@ -119,3 +119,16 @@ Source: 283 pages, 281 frames (402–962 s, one every 2 s). Frames 884–962 s a
 - E2R3 piston between balls 2 and 3 punches down into the jump arc. Hop through while it is up.
 - Extra checkpoint in E2R3 at x 77.1: past the vertical wheel, before the balls.
 - Blind-bot pass rate per obstacle is 5–12/12 (the bot uses the best of run/jump/slide at fixed distances). Obstacle-free best times are E2R1 ≈ 16 s, E2R2 ≈ 16 s, E2R3 ≈ 19 s.
+
+## v0.5.0: one course per episode, Episodes 3-6
+- User request: no separate rounds. Each episode is one continuous course. Episodes unlock in order, once the previous one is finished within its qualify time (= 2-star time).
+- Episode 3 (PDF 963-1340 s, grey pipe / heavy hazards): steel decks on black pipe legs, pan spinners, rainbow-faced pistons, black claws, spiked maces, gold U-pipes, stone balls on yellow poles, bullseye finish.
+- Episode 4 (PDF 1340-1770 s, gold platforms + giant food): sponge decks, sausages, cucumber windmills, apples on candy canes, cheese pushers, sandwich presses, rolling apples, burger balls, lettuce finish pad.
+- Episode 5 (PDF 1770-2218 s, pink + candy): pink pads, rainbow ramps, peppermint pendulums, jelly pushers and presses, donut and cookie spinners, lollipop poles, pinwheels, revolving panels, mushroom balls.
+- Episode 6 (our own design, grand finale): night, neon, 6.6 m higher. 50 named obstacles in 5 zones plus lifts, vanishing glass and a trampoline. The night look comes from a moon, a follow-spot on the runner, a lit skyline, floodlights and searchlights.
+- Tuning rules found by the bot:
+  - Flat hops need a 5.3 m pitch.
+  - Pairs of swinging or pushing obstacles are phased as a "wave", so a runner who keeps going gets through both.
+  - Windmill tips stop 0.8 m above the deck, so you slide under them.
+  - Pushers are 1.9 m tall, so they cannot be jumped.
+  - A bounce ignores jump-cut.

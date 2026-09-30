@@ -3,6 +3,7 @@ import { PoolWater } from './PoolWater.js';
 import { boxUV } from './materials.js';
 import { logoTexture, flagTexture, pirateFlagTexture } from './textures.js';
 import { mergeStatic, noReflect } from './merge.js';
+import { nightSkyTexture, themeFlagTexture, glowTexture } from './themeTextures.js';
 
 // Deterministic pseudo random so the scenery is identical every run.
 export function rng(seed = 1) {
@@ -51,6 +52,8 @@ export class Environment {
     scene.environmentIntensity = 0.9;
     pmrem.dispose();
     scene.fog = new THREE.FogExp2(0xbfd6e6, 0.0055);
+    this.renderer = renderer;
+    this.day = { background: sky, environment: scene.environment, envI: 0.9, fog: 0xbfd6e6, fogD: 0.0055 };
 
     // ---- sun
     this.sunDir = new THREE.Vector3(-0.45, 0.78, 0.44).normalize();
@@ -64,6 +67,8 @@ export class Environment {
     sun.shadow.radius = 3;
     scene.add(sun, sun.target);
     this.sun = sun;
+    this.hemi = new THREE.HemisphereLight(0x6a8cff, 0x05070c, 0);
+    scene.add(this.hemi);
 
     // ---- pool water
     this.water = new PoolWater({ width: 700, depth: 260, normals: assets.waterNormals, res: q.waterRes, sunDirection: this.sunDir });
@@ -168,18 +173,129 @@ export class Environment {
     }
   }
 
-  /** Episode look: pool flags + blue billboard (Ep 1) or skull flags + pirate billboard (Ep 2). */
+  /** Episode look: flags, billboard, water tint and (Episode 6) a night sky with moonlight and a lit skyline. */
   setTheme(theme, episode = 1) {
     if (this.currentTheme === theme && this.currentEp === episode) return;
     this.currentTheme = theme; this.currentEp = episode;
-    const pirate = theme === 'pirate';
-    if (pirate && !this.pirateFlag) this.pirateFlag = pirateFlagTexture();
-    this.flagMats.forEach((m, i) => { m.map = pirate ? this.pirateFlag : this.poolFlagMaps[i]; m.needsUpdate = true; });
-    if (!this.boardTex[episode]) {
-      this.boardTex[episode] = logoTexture({ w: 2048, h: 512, bg: pirate ? ['#3a2414', '#140a04'] : ['#0b3d91', '#06245a'], sub: pirate ? 'PIRATE COVE · EPISODE 2' : `OBSTACLE COURSE · EPISODE ${episode}` });
-    }
-    this.boardMat.map = this.boardMat.emissiveMap = this.boardTex[episode];
+    // flags
+    this.themeFlags ??= {};
+    if (theme === 'pirate') this.themeFlags.pirate ??= [pirateFlagTexture()];
+    else if (theme !== 'pool') this.themeFlags[theme] ??= [0, 1, 2, 3].map((i) => themeFlagTexture(theme, i));
+    this.flagMats.forEach((m, i) => {
+      m.map = theme === 'pool' ? this.poolFlagMaps[i] : this.themeFlags[theme][i % this.themeFlags[theme].length];
+      m.emissive?.set(theme === 'night' ? 0xffffff : 0x000000); m.emissiveMap = theme === 'night' ? m.map : null; m.emissiveIntensity = 0.8;
+      m.needsUpdate = true;
+    });
+    // billboard
+    const BOARD = {
+      pool: [['#0b3d91', '#06245a'], 'OBSTACLE COURSE · EPISODE 1'], pirate: [['#3a2414', '#140a04'], 'PIRATE COVE · EPISODE 2'],
+      steel: [['#5a6068', '#1a1d22'], 'STEEL WORKS · EPISODE 3'], food: [['#e8b646', '#8a4a10'], 'FOOD FIGHT · EPISODE 4'],
+      candy: [['#ff6ab0', '#8a2a6a'], 'CANDY LAND · EPISODE 5'], night: [['#07203a', '#010208'], 'GRAND FINALE · EPISODE 6'],
+    };
+    const [bg, sub] = BOARD[theme] || BOARD.pool;
+    this.boardTex[theme] ??= logoTexture({ w: 2048, h: 512, bg, sub });
+    this.boardMat.map = this.boardMat.emissiveMap = this.boardTex[theme];
+    this.boardMat.emissiveIntensity = theme === 'night' ? 1.1 : 0.25;
     this.boardMat.needsUpdate = true;
+    // water tint
+    const WATER = { pool: [0x046a7a, 0x2cc6c9], pirate: [0x045a6a, 0x22b0b4], steel: [0x0a5a78, 0x3ab4d0], food: [0x06708a, 0x3ad0d4], candy: [0x0a78a0, 0x5ae0f0], night: [0x010c16, 0x06303e] };
+    const [wc, sc] = WATER[theme] || WATER.pool;
+    const u = this.water.mesh.material.uniforms;
+    u.waterColor.value.set(wc); u.shallowColor.value.set(sc);
+    this.setNight(theme === 'night');
+  }
+
+  setNight(on) {
+    if (this.night === on) return;
+    this.night = on;
+    const sc = this.scene, u = this.water.mesh.material.uniforms;
+    if (on) {
+      if (!this.nightSet) {
+        const sky = nightSkyTexture();
+        const pmrem = new THREE.PMREMGenerator(this.renderer);
+        this.nightSet = { background: sky, environment: pmrem.fromEquirectangular(sky).texture };
+        pmrem.dispose();
+        this.nightGroup = this.buildNightScenery();
+      }
+      sc.background = this.nightSet.background; sc.environment = this.nightSet.environment;
+      sc.environmentIntensity = 0.5; sc.backgroundIntensity = 1;
+      sc.fog.color.set(0x070b1a); sc.fog.density = 0.0065;
+      this.sunDir.set(0.35, 0.62, -0.7).normalize(); // moon behind the course
+      this.sun.color.set(0xa8c0ff); this.sun.intensity = 1.35;
+      this.hemi.intensity = 0.9;
+      if (!this.followSpot) {
+        // stage follow-spot on the runner, so the character and obstacles read at night
+        this.followSpot = new THREE.SpotLight(0xfff2e0, 0, 34, 0.62, 0.55, 1.2);
+        this.scene.add(this.followSpot, this.followSpot.target);
+      }
+      this.followSpot.intensity = 160;
+      u.sunColor.value.set(0xc8d8ff);
+      this.nightGroup.visible = true;
+    } else {
+      sc.background = this.day.background; sc.environment = this.day.environment;
+      sc.environmentIntensity = this.day.envI;
+      sc.fog.color.set(this.day.fog); sc.fog.density = this.day.fogD;
+      this.sunDir.set(-0.45, 0.78, 0.44).normalize();
+      this.sun.color.set(0xfff1dc); this.sun.intensity = 3.2;
+      this.hemi.intensity = 0;
+      if (this.followSpot) this.followSpot.intensity = 0;
+      u.sunColor.value.set(0xfff4e0);
+      if (this.nightGroup) this.nightGroup.visible = false;
+    }
+    u.sunDirection.value.copy(this.sunDir);
+  }
+
+  /** stadium floodlights, a lit city skyline behind the hills, and searchlight beams */
+  buildNightScenery() {
+    const g = new THREE.Group();
+    const rand = rng(21);
+    // skyline: boxes with window-light textures, far behind the hills
+    const c = document.createElement('canvas'); c.width = 128; c.height = 256;
+    const cx = c.getContext('2d');
+    cx.fillStyle = '#05070d'; cx.fillRect(0, 0, 128, 256);
+    for (let y = 6; y < 256; y += 10) for (let x = 6; x < 128; x += 10) if (rand() > 0.45) { cx.fillStyle = rand() > 0.7 ? '#ffd79a' : rand() > 0.5 ? '#9ad4ff' : '#ffb35a'; cx.fillRect(x, y, 5, 6); }
+    const wt = new THREE.CanvasTexture(c); wt.colorSpace = THREE.SRGBColorSpace; wt.wrapS = wt.wrapT = THREE.RepeatWrapping;
+    const bmat = new THREE.MeshStandardMaterial({ color: 0x0a0d16, map: wt, emissive: 0xffffff, emissiveMap: wt, emissiveIntensity: 1.3, roughness: 0.8, fog: false });
+    for (let i = 0; i < 70; i++) {
+      const w = 6 + rand() * 12, h = 18 + rand() * rand() * 70, d = 6 + rand() * 10;
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const uv = geo.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) * w / 12, uv.getY(k) * h / 24);
+      const m = new THREE.Mesh(geo, bmat);
+      const x = -120 + i * 5.5 + rand() * 3, z = -150 - rand() * 60;
+      m.position.set(x, h / 2 + 4, z);
+      g.add(m);
+      if (rand() > 0.7) { // blinking red aircraft light
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2a2a, fog: false }));
+        lamp.position.set(x, h + 4.8, z); lamp.userData.blink = rand() * 6; g.add(lamp);
+      }
+    }
+    // floodlight masts along the far bank, with glowing lamp heads
+    const glow = glowTexture();
+    const sprMat = new THREE.SpriteMaterial({ map: glow, color: 0xdfeaff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+    const mastMat = new THREE.MeshStandardMaterial({ color: 0x22262e, metalness: 0.8, roughness: 0.4 });
+    const headMat = new THREE.MeshBasicMaterial({ color: 0xf4f8ff });
+    for (let i = 0; i < 12; i++) {
+      const x = -10 + i * 36, z = -26;
+      const y0 = terrainHeight(x, z);
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 24, 10), mastMat);
+      mast.position.set(x, y0 + 12, z); g.add(mast);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(4, 1.6, 0.4), headMat);
+      head.position.set(x, y0 + 24.5, z + 0.3); head.rotation.x = -0.35; g.add(head);
+      const spr = new THREE.Sprite(sprMat); spr.scale.set(16, 10, 1); spr.position.set(x, y0 + 24.5, z + 1); g.add(spr);
+    }
+    // sweeping searchlight beams
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0x9ac8ff, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    this.beams = [];
+    for (let i = 0; i < 5; i++) {
+      const geo = new THREE.ConeGeometry(6, 140, 20, 1, true); geo.translate(0, 70, 0);
+      const b = new THREE.Mesh(geo, beamMat);
+      b.position.set(-20 + i * 55, 2, -110); b.userData.ph = i * 1.3;
+      g.add(b); this.beams.push(b);
+    }
+    noReflect(g);
+    for (const o of g.children) o.layers.set(1);
+    this.scene.add(g);
+    return g;
   }
 
   /** Flag cloth animated in the vertex shader (no per-frame CPU work). */
@@ -204,7 +320,7 @@ export class Environment {
     const board = new THREE.Mesh(new THREE.PlaneGeometry(16, 4), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.25 }));
     board.userData.keep = true; // its texture changes per episode, so keep it out of the static merge
     this.boardMat = board.material;
-    this.boardTex = { 1: tex };
+    this.boardTex = { pool: tex };
     const z = -30, x = 52, y = terrainHeight(x, z);
     board.position.set(x, y + 6.5, z);
     const legMat = new THREE.MeshStandardMaterial({ color: 0x2c3036, metalness: 0.8, roughness: 0.4 });
@@ -259,5 +375,15 @@ export class Environment {
     this.sun.target.updateMatrixWorld();
     this.flagTime.value = this.water.time;
     this.updateFloats(dt);
+    if (this.night && this.followSpot) {
+      this.followSpot.position.set(focus.x - 3, focus.y + 9, 9);
+      this.followSpot.target.position.set(focus.x + 1.5, focus.y - 0.8, 0);
+      this.followSpot.target.updateMatrixWorld();
+    }
+    if (this.night && this.nightGroup) {
+      const t = this.water.time;
+      for (const b of this.beams) { b.rotation.z = Math.sin(t * 0.25 + b.userData.ph) * 0.5; b.rotation.x = Math.cos(t * 0.2 + b.userData.ph) * 0.25; }
+      for (const o of this.nightGroup.children) if (o.userData.blink !== undefined) o.visible = Math.floor((t + o.userData.blink) * 1.2) % 3 === 0;
+    }
   }
 }

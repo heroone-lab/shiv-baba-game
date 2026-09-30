@@ -23,6 +23,9 @@ const $ = (id) => document.getElementById(id);
 const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 const params = new URLSearchParams(location.search);
 const STAR = '<svg viewBox="0 0 24 24"><path d="m12 2 3 6.6 7.2.8-5.4 4.9 1.5 7.1L12 17.8 5.7 21.4l1.5-7.1L1.8 9.4 9 8.6z" fill="currentColor"/></svg>';
+const LOCK = '<svg class="ico" viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V7a3 3 0 0 0-6 0z" fill="currentColor"/></svg>';
+const UNLOCK = '<svg class="ico" viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 9.6-2l-1.8.9A3 3 0 0 0 9 7v3h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z" fill="currentColor"/></svg>';
+const TICK = '<svg class="ico" viewBox="0 0 24 24"><path d="m9 16.2-4.2-4.2-1.4 1.4L9 19 21 7l-1.4-1.4z" fill="currentColor"/></svg>';
 const starsHtml = (n) => [0, 1, 2].map((i) => `<span class="${i < n ? 'on' : ''}">${STAR}</span>`).join('');
 
 // Secondary goals (from the reference result screens). check(run) -> done?
@@ -36,6 +39,13 @@ const GOALS = {
 };
 const progressKey = (id) => `sb_prog_${id}`;
 const loadProgress = (id) => { try { return JSON.parse(localStorage.getItem(progressKey(id)) || '{}'); } catch { return {}; } };
+/** an episode opens once the previous one was finished within its qualifying time */
+const qualified = (ep) => { const b = loadProgress(ep.id).best; return !!b && b <= ep.qualify; };
+function isUnlocked(id) {
+  if (params.has('unlockall')) return true;
+  const i = EPISODES.findIndex((e) => e.id === id);
+  return i <= 0 || qualified(EPISODES[i - 1]);
+}
 
 export class Game {
   constructor() {
@@ -55,11 +65,11 @@ export class Game {
     this.falls = 0;
     this.bannerTimer = 0;
     // migrate the Episode 1 best time from v0.1–0.3
-    const oldBest = localStorage.getItem('sb_best_L01');
-    if (oldBest && !localStorage.getItem(progressKey('E1R1'))) localStorage.setItem(progressKey('E1R1'), JSON.stringify({ best: +oldBest }));
-    const want = params.get('round');
-    this.roundId = ROUNDS[want] ? want : localStorage.getItem('sb_last_round') in ROUNDS ? localStorage.getItem('sb_last_round') : 'E1R1';
-    this.menuEpisode = ROUNDS[this.roundId].episode;
+    const oldBest = localStorage.getItem('sb_best_L01') || JSON.parse(localStorage.getItem('sb_prog_E1R1') || '{}').best;
+    if (oldBest && !localStorage.getItem(progressKey('E1'))) localStorage.setItem(progressKey('E1'), JSON.stringify({ best: +oldBest, stars: 1 }));
+    const want = params.get('round') || params.get('ep');
+    const last = localStorage.getItem('sb_last_round');
+    this.roundId = ROUNDS[want] ? want : ROUNDS[last] && isUnlocked(last) ? last : 'E1';
     this.realTime = 0;
     if (IS_TOUCH) document.body.classList.add('touch');
   }
@@ -222,9 +232,11 @@ export class Game {
     const track = $('ticks');
     track.innerHTML = '';
     const L = this.course.finishX - this.course.checkpoints[0].x;
-    for (const o of this.course.obstacles) {
+    // one tick per obstacle; on long courses (Episode 6) one per checkpoint instead
+    const marks = this.course.obstacles.length > 24 ? this.course.checkpoints.slice(1).map((c) => c.x) : this.course.obstacles.map((o) => o.x);
+    for (const x of marks) {
       const i = document.createElement('i');
-      i.style.left = `${((o.x - this.course.checkpoints[0].x) / L) * 100}%`;
+      i.style.left = `${((x - this.course.checkpoints[0].x) / L) * 100}%`;
       track.appendChild(i);
     }
     const f = document.createElement('i');
@@ -256,40 +268,39 @@ export class Game {
 
   // ------------------------------------------------------------------ menu
   buildMenu() {
-    const tabs = $('epTabs');
-    tabs.innerHTML = '';
-    for (const ep of EPISODES) {
-      const b = document.createElement('button');
-      b.textContent = ep.title;
-      b.className = ep.id === this.menuEpisode ? 'on' : '';
-      b.onclick = () => { this.menuEpisode = ep.id; this.buildMenu(); };
-      tabs.appendChild(b);
-    }
-    const ep = EPISODES.find((e) => e.id === this.menuEpisode);
-    $('menuTag').textContent = `${ep.title} · ${ep.subtitle.toUpperCase()}`;
+    $('epTabs').innerHTML = '';
+    const cur = ROUNDS[this.roundId];
+    $('menuTag').textContent = `${cur.title} · ${cur.subtitle.toUpperCase()}`;
     const cards = $('roundCards');
     cards.innerHTML = '';
-    ep.rounds.forEach((r, i) => {
+    EPISODES.forEach((ep, i) => {
       const b = document.createElement('button');
-      if (!r) {
-        b.className = 'round locked'; b.disabled = true;
-        b.innerHTML = `<b>ROUND 0${i + 1}</b><span>Coming soon</span>`;
+      const pr = loadProgress(ep.id);
+      if (!isUnlocked(ep.id)) {
+        const prev = EPISODES[i - 1];
+        b.className = `round locked t-${ep.theme}`; b.disabled = true;
+        b.innerHTML = `<b>${ep.title}</b><span>${ep.subtitle}</span><div class="lock">${LOCK}</div>` +
+          `<em class="need">Finish ${prev.title.replace('EPISODE ', 'Ep ')} in ${fmt(prev.qualify)}</em>`;
       } else {
-        const pr = loadProgress(r.id);
-        const done = (r.goals || []).filter((g) => pr.goals?.includes(g)).length;
-        b.className = `round ${r.theme === 'pirate' ? 'pirate' : ''} ${r.id === this.roundId ? 'sel' : ''}`;
-        b.innerHTML = `<b>${r.title}</b><span>${r.subtitle}</span><div class="rstars">${starsHtml(pr.stars || 0)}</div>` +
-          `<em>${pr.best ? 'Best ' + fmt(pr.best) : ''}</em><div class="rgoals">${r.goals ? `Goals ${done}/${r.goals.length}` : ''}</div>`;
-        b.onclick = () => { this.loadRound(r.id); this.startRound(); };
+        const done = (ep.goals || []).filter((g) => pr.goals?.includes(g)).length;
+        const q = pr.best && pr.best <= ep.qualify;
+        b.className = `round t-${ep.theme} ${ep.id === this.roundId ? 'sel' : ''}`;
+        b.innerHTML = `<b>${ep.title}</b><span>${ep.subtitle}</span><div class="rstars">${starsHtml(pr.stars || 0)}</div>` +
+          `<em>${pr.best ? 'Best ' + fmt(pr.best) : 'Qualify ' + fmt(ep.qualify)}${q ? ' ' + TICK : ''}</em><div class="rgoals">${ep.goals ? `Goals ${done}/${ep.goals.length}` : ''}</div>`;
+        b.onclick = () => { this.loadRound(ep.id); this.startRound(); };
       }
       cards.appendChild(b);
     });
+    cards.querySelector('.sel')?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+  }
+
+  nextEpisode() {
+    const i = EPISODES.indexOf(this.def);
+    return EPISODES[i + 1] && isUnlocked(EPISODES[i + 1].id) ? EPISODES[i + 1] : null;
   }
 
   nextRound() {
-    const ep = EPISODES.find((e) => e.id === this.def.episode);
-    const i = ep.rounds.indexOf(this.def);
-    const next = ep.rounds[i + 1] || EPISODES.find((e) => e.id === ep.id + 1)?.rounds[0];
+    const next = this.nextEpisode();
     if (next) { this.loadRound(next.id); this.startRound(); } else this.toMenu();
   }
 
@@ -421,8 +432,7 @@ export class Game {
     if (!skipIntro) {
       this.mode = 'intro';
       this.cam.flyover(this.course.finishX + 4, this.course.checkpoints[0].x + 2, 4.2);
-      const ep = EPISODES.find((e) => e.id === d.episode);
-      this.banner(`${d.title}<small>${ep.title} · ${d.subtitle}</small>`, 3.6);
+      this.banner(`${d.title}<small>${d.subtitle} · qualify ${fmt(d.qualify)}</small>`, 3.6);
       await this.wait(4.3);
       if (!alive()) return;
     }
@@ -476,10 +486,12 @@ export class Game {
     const ghost = this.ghost.data;
     r.vs = ghost ? (t < ghost.time ? 'win' : 'lose') : null;
     const pr = loadProgress(this.roundId);
+    const wasQualified = qualified(this.def);
     r.newBest = !pr.best || t < pr.best;
     if (r.newBest) { pr.best = t; this.recorder.save(this.roundId, t); }
     pr.stars = Math.max(pr.stars || 0, r.stars);
     this.saveGoals(pr);
+    r.unlockedNow = !wasQualified && qualified(this.def) && !!EPISODES[EPISODES.indexOf(this.def) + 1];
     setTimeout(() => this.showResult(true), 2600);
   }
 
@@ -514,11 +526,18 @@ export class Game {
     $('resCoins').textContent = `${r.coins}/${r.coinTotal}`;
     $('stars').innerHTML = starsHtml(won ? r.stars : 0);
     $('resVs').textContent = !won ? '' : r.vs === 'win' ? 'YOU WON AGAINST YOUR OPPONENT!' : r.vs === 'lose' ? 'Your opponent was faster this time' : r.newBest ? 'New best time! Your opponent will race this run next time.' : '';
-    $('resGoals').innerHTML = (r.goals || []).map((g) => `<div class="${g.done ? 'done' : ''} ${g.fresh ? 'new' : ''}"><i>${g.done ? '✓' : ''}</i>${g.text}${g.fresh ? ' — NEW!' : ''}</div>`).join('');
+    $('resGoals').innerHTML = (r.goals || []).map((g) => `<div class="${g.done ? 'done' : ''} ${g.fresh ? 'new' : ''}"><i>${g.done ? TICK : ''}</i>${g.text}${g.fresh ? ' — NEW!' : ''}</div>`).join('');
     $('resGoals').style.display = r.goals?.length ? '' : 'none';
-    const ep = EPISODES.find((e) => e.id === this.def.episode);
-    const hasNext = !!(ep.rounds[ep.rounds.indexOf(this.def) + 1] || EPISODES.find((e) => e.id === ep.id + 1)?.rounds[0]);
+    const i = EPISODES.indexOf(this.def);
+    const nextEp = EPISODES[i + 1];
+    const hasNext = !!this.nextEpisode();
     $('nextBtn').style.display = won && hasNext ? '' : 'none';
+    // unlock message: did this run open the next episode?
+    const unlock = $('resUnlock');
+    if (nextEp && won && r.unlockedNow) unlock.innerHTML = `${UNLOCK} ${nextEp.title} UNLOCKED!`;
+    else if (nextEp && !hasNext) unlock.innerHTML = `${LOCK} Finish in ${fmt(this.def.qualify)} to unlock ${nextEp.title}`;
+    else unlock.innerHTML = '';
+    unlock.className = r.unlockedNow ? 'open' : '';
     this.buildMenu();
     this.showHud(false);
     this.ghost.hide();
@@ -536,9 +555,9 @@ export class Game {
   toMenu() {
     this.startToken = (this.startToken || 0) + 1; // cancel a pending countdown
     this.mode = 'menu';
+    $('banner').classList.remove('show'); this.bannerTimer = 0;
     this.ghost.hide();
     $('ghostTag').classList.remove('show');
-    this.menuEpisode = this.def.episode;
     this.buildMenu();
     this.showHud(false);
     this.showScreen('menu');

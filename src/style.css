@@ -211,3 +211,27 @@ body.touch .desktop-only { display: none; }
   .stats b { font-size: 18px; }
   #resVs { font-size: 14px; min-height: 0; }
 }
+
+/* ---------- episode cards (one course per episode, unlocked in order) ---------- */
+.eps:empty { display: none; }
+.rounds { max-width: min(1100px, 96vw); }
+.round { position: relative; }
+.round.t-steel { background: linear-gradient(#6a7078, #2a2e34); border-color: #f07a12; }
+.round.t-food { background: linear-gradient(#e8b646, #9a5a1c); border-color: #fff3a0; }
+.round.t-candy { background: linear-gradient(#ff6ab0, #8a2a6a); border-color: #ffe4f2; }
+.round.t-night { background: linear-gradient(#10183a, #04060e); border-color: #28e8ff; box-shadow: 0 0 16px #28e8ff66, 0 6px 16px #0006; }
+.round.sel { outline: 3px solid #fff; outline-offset: 2px; }
+.round.locked { opacity: .78; filter: grayscale(.75) brightness(.8); }
+.round .lock { font-size: 22px; line-height: 1; margin: 2px 0; }
+.round em.need { color: #ffd0c8; font-size: 11px; }
+#resUnlock { margin: 0; min-height: 0; font: 900 italic 17px 'Arial Black', sans-serif; color: #ffd0c8; text-shadow: 0 2px 0 #06245a; }
+#resUnlock.open { color: #ffd84a; font-size: 22px; text-shadow: 0 0 14px #ffc21a, 0 2px 0 #3a1300; }
+@media (max-height: 640px) {
+  .rounds { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; padding: 4px 6px; scrollbar-width: none; }
+  .rounds::-webkit-scrollbar { display: none; }
+  .round { flex: 0 0 auto; }
+}
+
+.ico { width: 1em; height: 1em; vertical-align: -0.14em; display: inline-block; }
+.round .lock .ico { width: 24px; height: 24px; }
+@media (max-height: 640px) { .round { width: 138px; padding: 8px; } }
