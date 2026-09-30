@@ -9,8 +9,8 @@
   <title>SHIV BABA — Obstacle Course</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
-  <script type="module" crossorigin src="./assets/index-DoudRdJd.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-CTlWluiZ.css">
+  <script type="module" crossorigin src="./assets/index-CrkqrxD7.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-De__R2Yx.css">
 </head>
 <body>
   <div id="app">
@@ -38,6 +38,8 @@
         </div>
         <button id="play" class="btn primary">PLAY</button>
         <button id="openSettings" class="btn">SETTINGS</button>
+        <p id="gpuWarn" class="small">Your browser is drawing the game without the graphics card (software rendering), so it will be slow.<br>
+          Turn ON <b>Settings → System → "Use graphics acceleration when available"</b> and restart the browser.</p>
         <p class="small help desktop-only">D / Right: run · A / Left: back · SPACE: jump (hold = higher) · S / Down: slide · P: pause</p>
         <p class="small help touch-only">Arrows: run · JUMP (hold = higher) · SLIDE under low beams</p>
       </section>
@@ -87,6 +89,7 @@
           <label>Sound</label><div class="seg" id="setSound"></div>
         </div>
         <p class="small" id="setNote"></p>
+        <p class="small" id="setGpu"></p>
         <button id="settingsBack" class="btn primary">DONE</button>
       </section>
 
