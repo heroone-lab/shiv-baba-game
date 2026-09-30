@@ -91,7 +91,18 @@ export class Player {
     }
 
     if (controlled) this.afterMove(dt, wasGrounded);
-    if (this.state === 'hit') this.updateHit(dt);
+    if (this.state === 'hit') {
+      this.updateHit(dt);
+      // stay solid while flying; if a paddle pins the body against a deck, squeeze it out sideways
+      for (let i = 0; i < 3; i++) {
+        this.pushOut(dt);
+        this.resolveDecks(false);
+        if (!this.overlapsObstacle()) break;
+        const sz = Math.sign(this.pos.z) || 1;
+        this.pos.z += sz * 0.12;
+        this.vel.z = sz * Math.max(Math.abs(this.vel.z), 5);
+      }
+    }
 
     if (controlled && this.invuln <= 0) this.collideObstacles(dt);
 
@@ -186,31 +197,51 @@ export class Player {
     return false;
   }
 
+  /**
+   * Decks are solid slabs (planks + padded rims). If the capsule overlaps one,
+   * push it out the cheapest way: step up onto it, or out through the end / side
+   * face, or down under it. Works in every state, including knock-back.
+   */
   resolveDecks(wasGrounded) {
-    const p = this.pos, r = PHYS.radius;
-    this.grounded = false;
-    if (Math.abs(p.z) > 1.25) return; // knocked off the deck: nothing below but water
+    const p = this.pos, v = this.vel, r = PHYS.radius;
     const hgt = this.capsuleHeight();
+    const hit = this.state === 'hit';
+    this.grounded = false;
     for (const d of this.course.platforms) {
-      // vertical faces at deck ends
+      const half = (d.kind === 'finish' ? 1.7 : 1.15) + 0.23; // plank half-width + padded rim
+      if (Math.abs(p.z) >= half + r || p.x <= d.x0 - r || p.x >= d.x1 + r) continue;
+      const top = d.topAt(THREE.MathUtils.clamp(p.x, d.x0, d.x1));
       const bottom = Math.min(d.t0, d.t1) - d.thick;
-      if (p.y + hgt > bottom) {
-        const topL = d.t0, topR = d.t1;
-        if (p.x < d.x0 && p.x + r > d.x0 && p.y < topL - PHYS.stepHeight) { p.x = d.x0 - r; if (this.vel.x > 0) this.vel.x = 0; }
-        if (p.x > d.x1 && p.x - r < d.x1 && p.y < topR - PHYS.stepHeight) { p.x = d.x1 + r; if (this.vel.x < 0) this.vel.x = 0; }
+      if (p.y >= top - 1e-4 || p.y + hgt <= bottom) continue; // above or fully below
+      const up = top - p.y;
+      if (up <= PHYS.stepHeight || (hit && v.y <= 0 && up < 0.6)) {
+        p.y = top; // step / land onto the deck
+        if (v.y < 0) {
+          if (hit) {
+            v.y = Math.min(3, -v.y * 0.35); // tumble along the planks instead of sinking into them
+            v.x *= 0.7;
+            if (Math.abs(v.z) < 3) v.z = (Math.sign(p.z) || 1) * 3;
+          } else { this.landSpeed = -v.y; v.y = 0; this.grounded = true; }
+        }
+        continue;
       }
-      // head bump under a deck
-      if (this.vel.y > 0 && p.x > d.x0 && p.x < d.x1 && p.y < bottom && p.y + hgt > bottom) { p.y = bottom - hgt; this.vel.y = 0; }
+      const outL = p.x + r - d.x0, outR = d.x1 - (p.x - r);
+      const outZ = half + r - Math.abs(p.z), outD = p.y + hgt - bottom;
+      const m = Math.min(outL, outR, outZ, outD);
+      if (m === outL) { p.x = d.x0 - r; if (v.x > 0) v.x = 0; }
+      else if (m === outR) { p.x = d.x1 + r; if (v.x < 0) v.x = 0; }
+      else if (m === outZ) { const sz = Math.sign(p.z) || 1; p.z = sz * (half + r); if (v.z * sz < 0) v.z = 0; }
+      else { p.y = bottom - hgt; if (v.y > 0) v.y = 0; }
     }
-    if (this.state === 'hit') return;
+    if (hit || this.grounded) return;
     const d = this.course.supportAt(p.x, p.z);
     if (!d) return;
     const top = d.topAt(p.x);
     const snap = wasGrounded ? 0.3 : 0.02; // stick to ramps when walking down
-    if (this.vel.y <= 0 && p.y <= top + snap && p.y >= top - 0.5) {
-      this.landSpeed = -this.vel.y;
+    if (v.y <= 0 && p.y <= top + snap && p.y >= top - 0.5) {
+      this.landSpeed = -v.y;
       p.y = top;
-      this.vel.y = 0;
+      v.y = 0;
       this.grounded = true;
     }
   }
@@ -239,8 +270,47 @@ export class Player {
     }
   }
 
+  /**
+   * Solid contact without triggering a new hit: move the capsule out of every
+   * obstacle it overlaps and cancel velocity into the surface (moving parts push).
+   */
+  pushOut(dt) {
+    const hgt = this.capsuleHeight(), r = PHYS.radius;
+    for (let iter = 0; iter < 3; iter++) {
+      let moved = false;
+      _a.set(this.pos.x, this.pos.y + r, this.pos.z);
+      _b.set(this.pos.x, this.pos.y + hgt - r, this.pos.z);
+      for (const o of this.course.obstaclesNear(this.pos.x, 7)) {
+        for (const c of o.colliders) {
+          const res = testCapsule(_a, _b, r, c);
+          if (!res || res.depth < 0.005) continue;
+          this.pos.addScaledVector(res.normal, res.depth + 0.002);
+          const sv = pointVelocity(c.node, c.node.userData.prev, res.point, dt, _sv);
+          const rel = this.vel.clone().sub(sv).dot(res.normal);
+          if (rel < 0) this.vel.addScaledVector(res.normal, -rel * 1.3); // small bounce off padding
+          _a.set(this.pos.x, this.pos.y + r, this.pos.z);
+          _b.set(this.pos.x, this.pos.y + hgt - r, this.pos.z);
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+  }
+
+  overlapsObstacle() {
+    const hgt = this.capsuleHeight(), r = PHYS.radius;
+    _a.set(this.pos.x, this.pos.y + r, this.pos.z);
+    _b.set(this.pos.x, this.pos.y + hgt - r, this.pos.z);
+    for (const o of this.course.obstaclesNear(this.pos.x, 7)) for (const c of o.colliders) {
+      const res = testCapsule(_a, _b, r, c);
+      if (res && res.depth > 0.01) return true;
+    }
+    return false;
+  }
+
   hit(res, sv, obstacle) {
     const n = res.normal;
+    this.pos.addScaledVector(n, res.depth + 0.002); // never start the knock-back inside the obstacle
     this.setState('hit');
     this.lastHit = obstacle.id;
     this.grounded = false;

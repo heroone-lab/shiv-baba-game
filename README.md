@@ -12,7 +12,7 @@ npm run build          # production web build -> dist/
 npx cap sync android   # copy dist/ into the Android project
 cd android && ./gradlew assembleDebug   # APK -> android/app/build/outputs/apk/debug/
 ```
-**Download the Android APK:** [apk/ShivBaba-v0.3.0-debug.apk](apk/ShivBaba-v0.3.0-debug.apk). Open it, tap "Download raw file", then install it on your phone (allow "Install unknown apps"). This is a debug build, not for the Play Store.
+**Download the Android APK:** [apk/ShivBaba-v0.3.1-debug.apk](apk/ShivBaba-v0.3.1-debug.apk). Open it, tap "Download raw file", then install it on your phone (allow "Install unknown apps"). This is a debug build, not for the Play Store.
 
 ## Display settings (menu → SETTINGS, also from Pause)
 | Resolution | Shadow map | Water reflection | Water shader | Post effects (bloom, grading, SMAA) | Pad clearcoat |

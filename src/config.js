@@ -25,4 +25,4 @@ export const LANE_HALF = 1.1; // half-width of the walkable deck (z)
 export const WATER_Y = 0;
 export const DECK_TOP = 1.4;
 export const ROUND_TIME_LIMIT = 150; // seconds, then "exhausted / time up"
-export const RESPAWN_INVULN = 1.2;
+export const RESPAWN_INVULN = 0; // no ghosting: checkpoints are placed outside every obstacle's sweep
