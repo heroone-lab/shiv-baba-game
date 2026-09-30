@@ -26,16 +26,13 @@
       <!-- MAIN MENU -->
       <section id="menu" class="screen">
         <h1 class="logo big"><span>SHIV</span><span>BABA</span></h1>
-        <p class="tag">EPISODE 1 · OBSTACLE COURSE</p>
-        <div class="rounds">
-          <button class="round" data-round="L01">
-            <b>ROUND 01</b><span>The Log Run</span><em id="best01"></em>
-          </button>
-          <button class="round locked" disabled><b>ROUND 02</b><span>Coming soon</span></button>
-          <button class="round locked" disabled><b>ROUND 03</b><span>Coming soon</span></button>
+        <p class="tag" id="menuTag">OBSTACLE COURSE</p>
+        <div class="eps" id="epTabs"></div>
+        <div class="rounds" id="roundCards"></div>
+        <div class="btnrow">
+          <button id="play" class="btn primary">PLAY</button>
+          <button id="openSettings" class="btn">SETTINGS</button>
         </div>
-        <button id="play" class="btn primary">PLAY</button>
-        <button id="openSettings" class="btn">SETTINGS</button>
         <p id="gpuWarn" class="small">Your browser is drawing the game without the graphics card (software rendering), so it will be slow.<br>
           Turn ON <b>Settings → System → "Use graphics acceleration when available"</b> and restart the browser.</p>
         <p class="small help desktop-only">D / Right: run · A / Left: back · SPACE: jump (hold = higher) · S / Down: slide · P: pause</p>
@@ -46,13 +43,14 @@
       <section id="hud">
         <div class="hud-top">
           <div class="chip"><b id="hudRound">ROUND 01</b><span>Contestant: Shiv</span></div>
-          <div class="timer" id="timer">0:00.0</div>
-          <div class="chip right"><span>Falls</span><b id="falls">0</b><button id="pauseBtn" aria-label="Pause"><svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg></button></div>
+          <div class="timerbox"><div class="hudstars" id="hudStars"></div><div class="timer" id="timer">0:00.0</div></div>
+          <div class="chip right"><span class="coinchip" id="coinChip"><i class="coin"></i><b id="coins">0/0</b></span><span>Falls</span><b id="falls">0</b><button id="pauseBtn" aria-label="Pause"><svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg></button></div>
         </div>
         <div class="progress"><div class="track" id="ticks"></div><i id="runner"></i></div>
       </section>
 
       <div id="banner"></div>
+      <div id="ghostTag">YOUR OPPONENT</div>
       <div id="fpsMeter"></div>
 
       <!-- TOUCH CONTROLS -->
@@ -99,9 +97,15 @@
           <div><span>Time</span><b id="resTime">0:00.0</b></div>
           <div><span>Falls</span><b id="resFalls">0</b></div>
           <div><span>Best</span><b id="resBest">—</b></div>
+          <div id="resCoinsBox"><span>Coins</span><b id="resCoins">0/0</b></div>
         </div>
-        <button class="btn primary" data-act="restart">PLAY AGAIN</button>
-        <button class="btn" data-act="menu">MAIN MENU</button>
+        <p id="resVs"></p>
+        <div class="goals" id="resGoals"></div>
+        <div class="btnrow">
+          <button id="nextBtn" class="btn primary" data-act="next">NEXT ROUND</button>
+          <button class="btn" data-act="restart">PLAY AGAIN</button>
+          <button class="btn" data-act="menu">MAIN MENU</button>
+        </div>
       </section>
 
       <div id="rotate">Rotate your phone to landscape for the best view</div>

@@ -77,6 +77,13 @@ export class Particles {
     }
   }
 
+  sparkle(x, y, z) {
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 1 + Math.random() * 2.5;
+      this.emit(x, y, z, Math.cos(a) * sp, 1.5 + Math.random() * 3, Math.sin(a) * sp * 0.5, 0.45 + Math.random() * 0.3, 0.05 + Math.random() * 0.05, 1, 0.85, 0.3, 1);
+    }
+  }
+
   update(dt) {
     for (let i = 0; i < this.N; i++) {
       if (this.life[i] <= 0) { this.size[i] = 0; continue; }

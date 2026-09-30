@@ -7,20 +7,35 @@ import { detectQuality, qualitySettings, IS_TOUCH } from './quality.js';
 import { loadAssets } from './assets.js';
 import { Materials } from './world/materials.js';
 import { Environment } from './world/environment.js';
-import { Course, ROUND01 } from './world/course.js';
+import { Course } from './world/course.js';
+import { EPISODES, ROUNDS } from './world/courses.js';
+import { GhostRecorder, GhostRunner, loadGhost } from './player/ghost.js';
 import { Character } from './player/character.js';
 import { Player } from './player/player.js';
 import { FollowCamera } from './camera.js';
 import { Input } from './input.js';
 import { Audio } from './audio.js';
 import { Particles } from './fx/particles.js';
-import { ROUND_TIME_LIMIT } from './config.js';
 import { testCapsule } from './collision.js';
 import { loadSettings, saveSettings, RES_PRESETS, RESOLUTIONS, FPS_OPTIONS, pixelRatioFor, FrameLimiter, FpsMeter, AutoResolution, gpuInfo } from './settings.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 const params = new URLSearchParams(location.search);
+const STAR = '<svg viewBox="0 0 24 24"><path d="m12 2 3 6.6 7.2.8-5.4 4.9 1.5 7.1L12 17.8 5.7 21.4l1.5-7.1L1.8 9.4 9 8.6z" fill="currentColor"/></svg>';
+const starsHtml = (n) => [0, 1, 2].map((i) => `<span class="${i < n ? 'on' : ''}">${STAR}</span>`).join('');
+
+// Secondary goals (from the reference result screens). check(run) -> done?
+const GOALS = {
+  stars3: { text: 'Obtain 3 stars', check: (r) => r.won && r.stars === 3 },
+  slide5: { text: 'Slide 5 times in the same course', check: (r) => r.slides >= 5 },
+  slidejump: { text: 'Jump while sliding', check: (r) => r.slideJumps >= 1 },
+  boost3: { text: 'Use the Speed Boost 3 times', check: (r) => r.boosts >= 3 },
+  coins: { text: 'Collect every coin', check: (r) => r.coinTotal > 0 && r.coins >= r.coinTotal },
+  nofall: { text: 'Finish without falling', check: (r) => r.won && r.falls === 0 },
+};
+const progressKey = (id) => `sb_prog_${id}`;
+const loadProgress = (id) => { try { return JSON.parse(localStorage.getItem(progressKey(id)) || '{}'); } catch { return {}; } };
 
 export class Game {
   constructor() {
@@ -39,6 +54,12 @@ export class Game {
     this.time = 0;
     this.falls = 0;
     this.bannerTimer = 0;
+    // migrate the Episode 1 best time from v0.1–0.3
+    const oldBest = localStorage.getItem('sb_best_L01');
+    if (oldBest && !localStorage.getItem(progressKey('E1R1'))) localStorage.setItem(progressKey('E1R1'), JSON.stringify({ best: +oldBest }));
+    const want = params.get('round');
+    this.roundId = ROUNDS[want] ? want : localStorage.getItem('sb_last_round') in ROUNDS ? localStorage.getItem('sb_last_round') : 'E1R1';
+    this.menuEpisode = ROUNDS[this.roundId].episode;
     this.realTime = 0;
     if (IS_TOUCH) document.body.classList.add('touch');
   }
@@ -129,15 +150,20 @@ export class Game {
     this.mats = new Materials(assets);
     this.mats.setFancy(this.q.fancy);
     this.env = new Environment(this.renderer, this.scene, assets, this.mats, this.q);
-    this.course = new Course(this.scene, this.mats, ROUND01);
+    this.assets = assets;
+    this.course = new Course(this.scene, this.mats, ROUNDS[this.roundId]);
+    this.env.setTheme(this.course.theme, this.course.def.episode);
     this.character = new Character(assets.hero);
+    this.ghost = new GhostRunner(assets.hero, this.scene);
+    this.recorder = new GhostRecorder();
     this.scene.add(this.character.root);
     this.particles = new Particles(this.scene);
     this.cam = new FollowCamera(this.camera);
     this.player = new Player(this.character, this.course, {
-      jump: () => this.audio.jump(),
+      jump: (fromSlide) => { this.audio.jump(); if (fromSlide) this.run.slideJumps++; },
       land: (v) => { this.audio.land(v); if (v > 9) this.cam.shake(0.3); },
-      slide: () => this.audio.slide(),
+      slide: () => { this.audio.slide(); this.run.slides++; },
+      boost: (fresh) => { this.audio.boost(); if (fresh) { this.run.boosts++; this.banner('<small>SPEED BOOST!</small>', 0.7); } },
       bounce: () => { this.audio.bounce(); this.cam.shake(0.3); },
       hit: (o, force, pt) => {
         this.audio.hit(force);
@@ -164,12 +190,37 @@ export class Game {
     this.initPost();
     this.buildProgressTicks();
     this.cpIndex = 0;
-    const best = localStorage.getItem('sb_best_L01');
-    if (best) $('best01').textContent = `Best ${fmt(+best)}`;
+    this.resetRun();
   }
 
+  resetRun() {
+    this.run = { slides: 0, slideJumps: 0, boosts: 0, coins: 0, coinTotal: this.course.coinTotal, falls: 0, won: false, stars: 0 };
+    this.course.resetCoins();
+    this.updateCoinHud();
+  }
+
+  /** Swap to another round without reloading: rebuild the course, keep everything else. */
+  loadRound(id) {
+    if (!ROUNDS[id]) return;
+    if (id !== this.roundId || !this.course) {
+      this.course.dispose();
+      this.roundId = id;
+      this.course = new Course(this.scene, this.mats, ROUNDS[id]);
+      this.player.course = this.course;
+      this.env.setTheme(this.course.theme, this.course.def.episode);
+      this.buildProgressTicks();
+      this.renderer.compile(this.scene, this.camera);
+    }
+    localStorage.setItem('sb_last_round', id);
+    this.resetRun();
+  }
+
+  get def() { return this.course.def; }
+
   buildProgressTicks() {
+    $('hudRound').textContent = this.course.def.title;
     const track = $('ticks');
+    track.innerHTML = '';
     const L = this.course.finishX - this.course.checkpoints[0].x;
     for (const o of this.course.obstacles) {
       const i = document.createElement('i');
@@ -186,20 +237,60 @@ export class Game {
     const unlock = () => this.audio.unlock();
     addEventListener('pointerdown', unlock, { passive: true });
     addEventListener('keydown', unlock);
-    $('play').onclick = () => this.startRound();
-    for (const r of document.querySelectorAll('.round[data-round]')) r.onclick = () => this.startRound();
+    $('play').onclick = () => { this.loadRound(this.roundId); this.startRound(); };
+    this.buildMenu();
     $('pauseBtn').onclick = () => this.togglePause();
     for (const b of document.querySelectorAll('[data-act]')) {
       b.onclick = () => {
         const a = b.dataset.act;
         if (a === 'resume') this.togglePause();
         if (a === 'restart') this.startRound(true);
+        if (a === 'next') this.nextRound();
         if (a === 'menu') this.toMenu();
       };
     }
     $('openSettings').onclick = () => this.openSettings('menu');
     $('pauseSettings').onclick = () => this.openSettings('pause');
     this.buildSettingsUI();
+  }
+
+  // ------------------------------------------------------------------ menu
+  buildMenu() {
+    const tabs = $('epTabs');
+    tabs.innerHTML = '';
+    for (const ep of EPISODES) {
+      const b = document.createElement('button');
+      b.textContent = ep.title;
+      b.className = ep.id === this.menuEpisode ? 'on' : '';
+      b.onclick = () => { this.menuEpisode = ep.id; this.buildMenu(); };
+      tabs.appendChild(b);
+    }
+    const ep = EPISODES.find((e) => e.id === this.menuEpisode);
+    $('menuTag').textContent = `${ep.title} · ${ep.subtitle.toUpperCase()}`;
+    const cards = $('roundCards');
+    cards.innerHTML = '';
+    ep.rounds.forEach((r, i) => {
+      const b = document.createElement('button');
+      if (!r) {
+        b.className = 'round locked'; b.disabled = true;
+        b.innerHTML = `<b>ROUND 0${i + 1}</b><span>Coming soon</span>`;
+      } else {
+        const pr = loadProgress(r.id);
+        const done = (r.goals || []).filter((g) => pr.goals?.includes(g)).length;
+        b.className = `round ${r.theme === 'pirate' ? 'pirate' : ''} ${r.id === this.roundId ? 'sel' : ''}`;
+        b.innerHTML = `<b>${r.title}</b><span>${r.subtitle}</span><div class="rstars">${starsHtml(pr.stars || 0)}</div>` +
+          `<em>${pr.best ? 'Best ' + fmt(pr.best) : ''}</em><div class="rgoals">${r.goals ? `Goals ${done}/${r.goals.length}` : ''}</div>`;
+        b.onclick = () => { this.loadRound(r.id); this.startRound(); };
+      }
+      cards.appendChild(b);
+    });
+  }
+
+  nextRound() {
+    const ep = EPISODES.find((e) => e.id === this.def.episode);
+    const i = ep.rounds.indexOf(this.def);
+    const next = ep.rounds[i + 1] || EPISODES.find((e) => e.id === ep.id + 1)?.rounds[0];
+    if (next) { this.loadRound(next.id); this.startRound(); } else this.toMenu();
   }
 
   // ------------------------------------------------------------------ settings
@@ -306,34 +397,46 @@ export class Game {
 
   // ------------------------------------------------------------------ flow
   async startRound(skipIntro = false) {
+    const token = (this.startToken = (this.startToken || 0) + 1);
+    const alive = () => token === this.startToken;
     this.audio.unlock();
     this.showScreen(null);
     this.showHud(false);
+    this.resetRun();
     this.course.time = 0;
     this.time = 0;
     this.falls = 0;
+    this.elimShown = false;
     $('falls').textContent = '0';
-    $('timer').textContent = fmt(0);
     $('timer').classList.remove('warn');
+    this.updateTimerHud();
     this.cpIndex = 0;
     this.player.maxX = 0;
     this.player.respawn(this.course.checkpoints[0]);
     this.player.freeze();
+    this.recorder.reset();
+    const g = loadGhost(this.roundId);
+    this.ghost.setRun(g);
+    const d = this.def;
     if (!skipIntro) {
       this.mode = 'intro';
       this.cam.flyover(this.course.finishX + 4, this.course.checkpoints[0].x + 2, 4.2);
-      this.banner(`${ROUND01.title}<small>${ROUND01.subtitle}</small>`, 3.6);
+      const ep = EPISODES.find((e) => e.id === d.episode);
+      this.banner(`${d.title}<small>${ep.title} · ${d.subtitle}</small>`, 3.6);
       await this.wait(4.3);
+      if (!alive()) return;
     }
     this.cam.cine = null;
     this.cam.snap(this.player, this.course);
     this.showHud(true);
     this.mode = 'countdown';
-    for (const n of ['3', '2', '1']) {
-      this.banner(n, 0.8); this.audio.beep(false);
+    const words = d.countdown ? ['READY', 'SET!', 'GO!!!'] : ['3', '2', '1', 'GO!'];
+    for (let i = 0; i < words.length - 1; i++) {
+      this.banner(words[i], 0.8); this.audio.beep(false);
       await this.wait(params.has('fastcount') ? 0.05 : 0.85);
+      if (!alive()) return;
     }
-    this.banner('GO!', 0.9); this.audio.beep(true); this.audio.crowd(1.2, 'cheer');
+    this.banner(words[words.length - 1], 0.9); this.audio.beep(true); this.audio.crowd(1.2, 'cheer');
     this.player.release();
     this.mode = 'play';
   }
@@ -349,44 +452,79 @@ export class Game {
   async respawn() {
     if (this.mode !== 'play') return;
     await this.fade(true);
+    if (this.mode !== 'play') return;
     const cp = this.course.checkpointFor(this.player.maxX);
     this.player.respawn(cp);
     this.cam.snap(this.player, this.course);
     await this.fade(false);
+    if (this.def.countdown && this.mode === 'play') { this.banner('Get Ready!', 1.0); this.audio.getReady(); }
+  }
+
+  starsFor(t) {
+    const [s3, s2] = this.def.stars;
+    return t <= s3 ? 3 : t <= s2 ? 2 : 1;
   }
 
   finishRound() {
     this.mode = 'done';
     this.audio.fanfare();
-    this.banner('FINISH!', 2.2);
+    this.banner('COMPLETED!', 2.2);
     this.particles.confetti(this.player.pos.x, this.player.pos.y + 3, 0);
     const t = this.time;
-    const key = 'sb_best_L01';
-    const prev = +localStorage.getItem(key) || Infinity;
-    if (t < prev) localStorage.setItem(key, String(t));
+    const r = this.run;
+    r.won = true; r.falls = this.falls; r.stars = this.starsFor(t); r.time = t;
+    const ghost = this.ghost.data;
+    r.vs = ghost ? (t < ghost.time ? 'win' : 'lose') : null;
+    const pr = loadProgress(this.roundId);
+    r.newBest = !pr.best || t < pr.best;
+    if (r.newBest) { pr.best = t; this.recorder.save(this.roundId, t); }
+    pr.stars = Math.max(pr.stars || 0, r.stars);
+    this.saveGoals(pr);
     setTimeout(() => this.showResult(true), 2600);
   }
 
+  saveGoals(pr) {
+    const before = new Set(pr.goals || []);
+    this.run.goals = (this.def.goals || []).map((id) => ({ id, text: GOALS[id].text, done: before.has(id) || GOALS[id].check(this.run), fresh: !before.has(id) && GOALS[id].check(this.run) }));
+    pr.goals = this.run.goals.filter((g) => g.done).map((g) => g.id);
+    localStorage.setItem(progressKey(this.roundId), JSON.stringify(pr));
+  }
+
   timeUp() {
+    if (this.mode !== 'play') return;
     this.mode = 'done';
-    this.audio.fail();
-    this.banner('TIME UP!<small>Exhausted…</small>', 2.5);
+    this.audio.eliminated();
+    this.banner(this.def.countdown ? "TIME'S UP!<small>ELIMINATED!</small>" : 'TIME UP!<small>Exhausted…</small>', 2.5);
     this.player.freeze();
     this.character.play('Defeated', { fade: 0.4, once: true });
+    this.run.falls = this.falls;
+    const pr = loadProgress(this.roundId);
+    this.saveGoals(pr);
     setTimeout(() => this.showResult(false), 2600);
   }
 
   showResult(won) {
-    const best = +localStorage.getItem('sb_best_L01');
-    $('resTitle').textContent = won ? 'ROUND COMPLETE!' : 'TIME UP!';
+    const pr = loadProgress(this.roundId);
+    const r = this.run;
+    $('resTitle').textContent = won ? 'COMPLETED!' : this.def.countdown ? 'ELIMINATED!' : 'TIME UP!';
     $('resTime').textContent = won ? fmt(this.time) : '—';
     $('resFalls').textContent = this.falls;
-    $('resBest').textContent = best ? fmt(best) : '—';
-    const stars = won ? (this.falls === 0 && this.time < 45 ? 3 : this.falls <= 2 && this.time < 75 ? 2 : 1) : 0;
-    const star = '<svg viewBox="0 0 24 24"><path d="m12 2 3 6.6 7.2.8-5.4 4.9 1.5 7.1L12 17.8 5.7 21.4l1.5-7.1L1.8 9.4 9 8.6z" fill="currentColor"/></svg>';
-    $('stars').innerHTML = [0, 1, 2].map((i) => `<span class="${i < stars ? 'on' : ''}">${star}</span>`).join('');
-    if (best) $('best01').textContent = `Best ${fmt(best)}`;
+    $('resBest').textContent = pr.best ? fmt(pr.best) : '—';
+    $('resCoinsBox').style.display = r.coinTotal ? '' : 'none';
+    $('resCoins').textContent = `${r.coins}/${r.coinTotal}`;
+    $('stars').innerHTML = starsHtml(won ? r.stars : 0);
+    $('resVs').textContent = !won ? '' : r.vs === 'win' ? 'YOU WON AGAINST YOUR OPPONENT!' : r.vs === 'lose' ? 'Your opponent was faster this time' : r.newBest ? 'New best time! Your opponent will race this run next time.' : '';
+    $('resGoals').innerHTML = (r.goals || []).map((g) => `<div class="${g.done ? 'done' : ''} ${g.fresh ? 'new' : ''}"><i>${g.done ? '✓' : ''}</i>${g.text}${g.fresh ? ' — NEW!' : ''}</div>`).join('');
+    $('resGoals').style.display = r.goals?.length ? '' : 'none';
+    const ep = EPISODES.find((e) => e.id === this.def.episode);
+    const hasNext = !!(ep.rounds[ep.rounds.indexOf(this.def) + 1] || EPISODES.find((e) => e.id === ep.id + 1)?.rounds[0]);
+    $('nextBtn').style.display = won && hasNext ? '' : 'none';
+    this.buildMenu();
     this.showHud(false);
+    this.ghost.hide();
+    $('ghostTag').classList.remove('show');
+    $('banner').classList.remove('show'); // don't let COMPLETED!/TIME'S UP! linger behind the result card
+    this.bannerTimer = 0;
     this.showScreen('result');
   }
 
@@ -396,7 +534,12 @@ export class Game {
   }
 
   toMenu() {
+    this.startToken = (this.startToken || 0) + 1; // cancel a pending countdown
     this.mode = 'menu';
+    this.ghost.hide();
+    $('ghostTag').classList.remove('show');
+    this.menuEpisode = this.def.episode;
+    this.buildMenu();
     this.showHud(false);
     this.showScreen('menu');
     this.player.respawn(this.course.checkpoints[0]);
@@ -490,19 +633,47 @@ export class Game {
     this.course.update(dt);
     if (this.mode === 'play') {
       this.time += dt;
-      if (ROUND_TIME_LIMIT - this.time <= 0) this.timeUp();
+      if (this.def.timeLimit - this.time <= 0) this.timeUp();
     }
     this.player.update(dt, this.mode === 'play' ? input : IDLE_INPUT);
     this.updateCheckpoint();
+    if (this.mode === 'play') {
+      this.recorder.sample(dt, this.player);
+      const p = this.player;
+      if (p.state !== 'water' && p.state !== 'hit') {
+        const got = this.course.collectCoins(p.pos, p.capsuleHeight());
+        if (got) {
+          this.run.coins += got;
+          this.audio.coin();
+          const c = this.course.lastCoin;
+          this.particles.sparkle(c.x, c.y, 0);
+          this.updateCoinHud();
+        }
+      }
+    }
+    if (this.mode === 'play' || this.mode === 'done' || this.mode === 'countdown') this.ghost.update(dt, this.mode === 'play' || this.mode === 'done');
+  }
+
+  updateCoinHud() {
+    $('coinChip').classList.toggle('hide', !this.course.coinTotal);
+    $('coins').textContent = `${this.run.coins}/${this.course.coinTotal}`;
+  }
+
+  /** countdown rounds show time left, Episode 1 shows time elapsed; stars drain as time passes */
+  updateTimerHud() {
+    const d = this.def;
+    const left = d.timeLimit - this.time;
+    $('timer').textContent = d.countdown ? fmt(Math.max(0, left)) : fmt(this.time);
+    $('timer').classList.toggle('warn', left < (d.countdown ? 10 : 20));
+    const st = this.starsFor(this.time);
+    if (st !== this.hudStars) { this.hudStars = st; $('hudStars').innerHTML = starsHtml(st); }
   }
 
   /** Per-rendered-frame work: camera, particles, water, flags, HUD text. */
   visuals(dt) {
     if (this.mode === 'paused') return;
-    if (this.mode === 'play' || this.mode === 'done') {
-      $('timer').textContent = fmt(this.time);
-      $('timer').classList.toggle('warn', ROUND_TIME_LIMIT - this.time < 20);
-    }
+    if (this.mode === 'play' || this.mode === 'done') this.updateTimerHud();
+    this.course.visuals();
     this.particles.update(dt);
     if (this.mode === 'menu') this.menuCamera(dt);
     else this.cam.update(dt, this.player, this.course);
@@ -511,7 +682,8 @@ export class Game {
 
   menuCamera(dt) {
     this.menuT = (this.menuT || 0) + dt;
-    const x = 30 + Math.sin(this.menuT * 0.06) * 40;
+    const mid = this.course.finishX / 2;
+    const x = mid + Math.sin(this.menuT * 0.06) * (mid - 10);
     this.camera.position.set(x - 6, 6.5, 19);
     this.camera.lookAt(x + 4, 2.2, -2);
     this.cam.focus.set(x, 2, 0);
@@ -538,6 +710,15 @@ export class Game {
     const x0 = this.course.checkpoints[0].x, L = this.course.finishX - x0;
     const u = THREE.MathUtils.clamp((this.player.pos.x - x0) / L, 0, 1);
     $('runner').style.left = `${u * 100}%`;
+    const tag = $('ghostTag');
+    const showTag = this.ghost.active && this.ghost.char.root.visible && (this.mode === 'play' || this.mode === 'countdown');
+    if (showTag) {
+      const v = this.ghost.pos.clone(); v.y += 2.1;
+      v.project(this.camera);
+      const vis = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
+      tag.classList.toggle('show', vis);
+      if (vis) tag.style.transform = `translate(${((v.x + 1) / 2) * innerWidth}px, ${((1 - v.y) / 2) * innerHeight}px) translate(-50%, -100%)`;
+    } else tag.classList.remove('show');
   }
 
   resize() {

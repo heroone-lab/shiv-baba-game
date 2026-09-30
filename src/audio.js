@@ -73,6 +73,12 @@ export class Audio {
     this.noiseBurst({ dur: 0.5, freq: 300, type: 'lowpass', gain: 0.5 });
     this.crowd(0.9, 'laugh');
   }
+  coin() { this.tone({ freq: 1318, dur: 0.09, type: 'square', gain: 0.07 }); this.tone({ freq: 1976, dur: 0.22, type: 'square', gain: 0.07, delay: 0.07 }); }
+  boost() { this.noiseBurst({ dur: 0.5, freq: 600, q: 0.8, sweep: 4, gain: 0.22 }); this.tone({ freq: 220, dur: 0.4, slide: 3, type: 'sawtooth', gain: 0.06 }); }
+  cannon() { this.noiseBurst({ dur: 0.35, freq: 120, type: 'lowpass', gain: 0.5 }); }
+  stamp() { this.noiseBurst({ dur: 0.18, freq: 200, type: 'lowpass', gain: 0.35 }); }
+  getReady() { this.tone({ freq: 660, dur: 0.15, type: 'triangle', gain: 0.12 }); }
+  eliminated() { [330, 262, 196].forEach((f, i) => this.tone({ freq: f, dur: 0.45, type: 'sawtooth', gain: 0.1, delay: i * 0.3 })); this.crowd(1.2, 'ooh'); }
   beep(high = false) { this.tone({ freq: high ? 1046 : 523, dur: high ? 0.5 : 0.18, type: 'square', gain: 0.12 }); }
   checkpoint() { [659, 880].forEach((f, i) => this.tone({ freq: f, dur: 0.18, type: 'triangle', gain: 0.18, delay: i * 0.09 })); }
   fanfare() {

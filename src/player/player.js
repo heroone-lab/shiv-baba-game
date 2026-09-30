@@ -30,6 +30,8 @@ export class Player {
     this.maxX = 0;
     this.lastHit = null;
     this.spin = 0;
+    this.boostT = 0;
+    this.slideJump = false;
   }
 
   get root() { return this.char.root; }
@@ -44,6 +46,7 @@ export class Player {
     this.invuln = RESPAWN_INVULN;
     this.dir = 1;
     this.spin = 0;
+    this.boostT = 0;
     this.char.root.rotation.set(0, 0, 0);
     this.char.yaw = Math.PI / 2;
     this.char.pivot.rotation.y = this.char.yaw;
@@ -90,6 +93,7 @@ export class Player {
       this.resolveDecks(wasGrounded);
     }
 
+    this.pushSolids(dt);
     if (controlled) this.afterMove(dt, wasGrounded);
     if (this.state === 'hit') {
       this.updateHit(dt);
@@ -121,9 +125,29 @@ export class Player {
     const move = input.move;
     if (Math.abs(move) > 0.1) this.dir = Math.sign(move);
 
+    // speed-boost strips on the deck
+    this.boostT -= dt;
+    if (this.grounded && this.course.boostAt(this.pos.x)) {
+      if (this.boostT < 0.5) this.events.boost?.(this.boostT <= 0);
+      this.boostT = 0.5; // short afterglow so the extra speed doesn't fling you past the next deck
+    }
+    const boost = this.boostT > 0 ? 1.5 : 1;
+
     if (this.state === 'slide') {
       this.slideT -= dt;
-      this.vel.x = approach(this.vel.x, 0, PHYS.slideFriction * dt);
+      const sup = this.grounded ? this.course.supportAt(this.pos.x, this.pos.z) : null;
+      const sl = sup ? sup.slope : 0;
+      if (sl * Math.sign(this.vel.x || this.dir) < -0.05) {
+        // sliding downhill picks up speed ("sliding downhill is an effective way to go faster")
+        const dirX = Math.sign(this.vel.x || this.dir);
+        this.vel.x += dirX * PHYS.gravity * (Math.abs(sl) / Math.hypot(1, sl)) * 0.85 * dt;
+        this.vel.x = THREE.MathUtils.clamp(this.vel.x, -15, 15);
+        this.slideT = Math.max(this.slideT, 0.2);
+      } else if (boost > 1) {
+        this.vel.x = approach(this.vel.x, Math.sign(this.vel.x || 1) * PHYS.runSpeed * boost, PHYS.groundAccel * dt);
+      } else {
+        this.vel.x = approach(this.vel.x, 0, PHYS.slideFriction * dt);
+      }
       const blocked = this.headBlocked();
       if ((this.slideT <= 0 || Math.abs(this.vel.x) < 1.2) && !blocked) {
         this.setState('ground');
@@ -131,8 +155,10 @@ export class Player {
         this.vel.x = 2.5 * Math.sign(this.vel.x || 1); // keep scooting until clear
       }
     } else {
-      const target = move * PHYS.runSpeed;
-      const accel = this.grounded ? (Math.abs(move) > 0.1 ? PHYS.groundAccel : PHYS.groundDecel) : PHYS.airAccel;
+      const target = move * PHYS.runSpeed * boost;
+      let accel = this.grounded ? (Math.abs(move) > 0.1 ? PHYS.groundAccel : PHYS.groundDecel) : PHYS.airAccel;
+      // carried momentum (downhill slide / boost) bleeds off gently instead of stopping dead
+      if (Math.abs(this.vel.x) > Math.abs(target) && Math.sign(this.vel.x) === Math.sign(target)) accel = this.grounded ? 14 : 3;
       this.vel.x = approach(this.vel.x, target, accel * dt);
     }
 
@@ -140,23 +166,25 @@ export class Player {
     this.jumpBuf = input.jumpPressed ? PHYS.jumpBuffer : this.jumpBuf - dt;
     this.coyote = this.grounded ? PHYS.coyoteTime : this.coyote - dt;
     if (this.jumpBuf > 0 && this.coyote > 0 && !(this.state === 'slide' && this.headBlocked())) {
+      this.slideJump = this.state === 'slide';
       this.vel.y = PHYS.jumpVel;
       this.grounded = false;
       this.coyote = this.jumpBuf = 0;
       this.jumpCut = false;
       this.setState('air');
       this.char.play('RunningJump', { fade: 0.08, once: true, timeScale: 1.15 });
-      this.events.jump?.();
+      this.events.jump?.(this.slideJump);
     }
     if (this.state === 'air' && !input.jumpHeld && this.vel.y > 0 && !this.jumpCut) {
       this.vel.y *= PHYS.jumpCut;
       this.jumpCut = true;
     }
 
-    if (input.slidePressed && this.grounded && this.state === 'ground' && Math.abs(this.vel.x) > PHYS.slideMinSpeed) {
+    const onSlope = this.grounded && Math.abs(this.course.supportAt(this.pos.x, this.pos.z)?.slope || 0) > 0.05;
+    if (input.slidePressed && this.grounded && this.state === 'ground' && (Math.abs(this.vel.x) > PHYS.slideMinSpeed || onSlope)) {
       this.setState('slide');
       this.slideT = PHYS.slideTime;
-      this.vel.x = Math.sign(this.vel.x) * Math.max(Math.abs(this.vel.x), PHYS.runSpeed) * 1.08;
+      this.vel.x = Math.sign(this.vel.x || this.dir) * Math.max(Math.abs(this.vel.x), PHYS.runSpeed) * 1.08;
       this.char.play('RunningSlide', { fade: 0.1, once: true, timeScale: 1.35, from: 0.08 });
       this.events.slide?.();
     }
@@ -172,6 +200,10 @@ export class Player {
       this.setState('air');
     }
 
+    if (this.grounded) {
+      const sup = this.course.supportAt(this.pos.x, this.pos.z);
+      if (sup?.kind === 'ball') this.vel.x += ((this.pos.x - sup.cx) / sup.r) * 12 * dt; // slippery: slides off the curve
+    }
     if (this.state === 'ground') {
       const sp = Math.abs(this.vel.x);
       if (sp < 0.35) this.char.play('Idle', { fade: 0.25 });
@@ -190,8 +222,7 @@ export class Player {
     // is there an obstacle directly above a sliding runner?
     _a.set(this.pos.x, this.pos.y + PHYS.radius + 0.1, 0);
     _b.set(this.pos.x, this.pos.y + PHYS.height - PHYS.radius, 0);
-    for (const o of this.course.obstaclesNear(this.pos.x, 3)) {
-      if (o.id !== 'SL') continue;
+    for (const o of this.course.obstaclesNear(this.pos.x, 5)) {
       for (const c of o.colliders) if (testCapsule(_a, _b, PHYS.radius, c)) return true;
     }
     return false;
@@ -206,9 +237,11 @@ export class Player {
     const p = this.pos, v = this.vel, r = PHYS.radius;
     const hgt = this.capsuleHeight();
     const hit = this.state === 'hit';
+    const groundedBefore = this.grounded; // from the previous sub-step (keeps a fresh landing on a curved ball)
     this.grounded = false;
     for (const d of this.course.platforms) {
-      const half = (d.kind === 'finish' ? 1.7 : 1.15) + 0.23; // plank half-width + padded rim
+      if (d.kind === 'ball') continue; // balls are solid spheres (pushSolids) with a curved top
+      const half = d.half; // plank half-width + rim
       if (Math.abs(p.z) >= half + r || p.x <= d.x0 - r || p.x >= d.x1 + r) continue;
       const top = d.topAt(THREE.MathUtils.clamp(p.x, d.x0, d.x1));
       const bottom = Math.min(d.t0, d.t1) - d.thick;
@@ -237,7 +270,7 @@ export class Player {
     const d = this.course.supportAt(p.x, p.z);
     if (!d) return;
     const top = d.topAt(p.x);
-    const snap = wasGrounded ? 0.3 : 0.02; // stick to ramps when walking down
+    const snap = wasGrounded || groundedBefore ? 0.3 : 0.02; // stick to ramps / ball tops when moving down them
     if (v.y <= 0 && p.y <= top + snap && p.y >= top - 0.5) {
       this.landSpeed = -v.y;
       p.y = top;
@@ -294,6 +327,31 @@ export class Player {
         }
       }
       if (!moved) break;
+    }
+  }
+
+  /** non-hazard solids (big balls): push out, never knock down */
+  pushSolids(dt) {
+    if (this.state === 'water' || !this.course.solids.length) return;
+    const hgt = this.capsuleHeight(), r = PHYS.radius;
+    for (const s of this.course.solidsNear(this.pos.x)) for (const c of s.colliders) {
+      _a.set(this.pos.x, this.pos.y + r, this.pos.z);
+      _b.set(this.pos.x, this.pos.y + hgt - r, this.pos.z);
+      const res = testCapsule(_a, _b, r, c);
+      if (!res || res.depth < 0.003) continue;
+      this.pos.addScaledVector(res.normal, res.depth + 0.002);
+      const sv = pointVelocity(c.node, c.node.userData.prev, res.point, dt, _sv);
+      const rel = this.vel.clone().sub(sv).dot(res.normal);
+      if (rel < 0) this.vel.addScaledVector(res.normal, -rel);
+      if (res.normal.y > 0.6 && this.vel.y <= 0.5 && this.state === 'air') this.vel.y = Math.max(this.vel.y, sv.y);
+      // touching down on the top of a ball = a landing, even while the ball bobs upward
+      const pl = s.platform;
+      if (pl && res.normal.y > 0.55 && this.state === 'air' && this.vel.y <= sv.y + 0.5 && pl.standable(this.pos.x)) {
+        this.pos.y = Math.max(this.pos.y, pl.topAt(this.pos.x));
+        this.landSpeed = Math.max(0, -this.vel.y);
+        this.vel.y = 0;
+        this.grounded = true;
+      }
     }
   }
 

@@ -11,9 +11,9 @@ import { cylinderUV, boxUV } from './materials.js';
 //  static               -> no motion
 // All motion is driven by the shared course clock `t` so timing is deterministic.
 
-const V = (x, y, z) => new THREE.Vector3(x, y, z);
+export const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
-function shadowed(o) {
+export function shadowed(o) {
   o.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
   return o;
 }
@@ -35,13 +35,13 @@ export function steelPost(mats, x, z, y0, y1, r = 0.12) {
   return m;
 }
 
-function pad(w, h, d, mat, r = 0.1) {
+export function pad(w, h, d, mat, r = 0.1) {
   const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2 - 0.01, h / 2 - 0.01, d / 2 - 0.01)), mat);
   m.castShadow = m.receiveShadow = true;
   return m;
 }
 
-class Obstacle {
+export class Obstacle {
   constructor(id, name, x) {
     this.id = id; this.name = name; this.x = x;
     this.group = new THREE.Group();
@@ -49,11 +49,14 @@ class Obstacle {
     this.phase = 0;
   }
   collide(c) { c.node.userData.prev = new THREE.Matrix4(); this.colliders.push(c); return c; }
+  /** reach along x from the obstacle centre (used for spawn-safety and look-ahead) */
+  get solid() { return false; }
   savePrev() { for (const c of this.colliders) c.node.userData.prev.copy(c.node.matrixWorld); }
   update(t) {}
   finish() {
     // moving parts must stay separate objects; everything else can be merged
-    for (const k of ['pivot', 'rot', 'rotor']) if (this[k]) this[k].userData.dynamic = true;
+    for (const k of ['pivot', 'rot', 'rotor', 'mover']) if (this[k]) this[k].userData.dynamic = true;
+    for (const n of this.dynamicNodes || []) n.userData.dynamic = true;
     this.group.updateMatrixWorld(true);
     this.savePrev();
   }

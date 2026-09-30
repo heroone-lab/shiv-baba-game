@@ -151,3 +151,63 @@ body.touch .desktop-only { display: none; }
   .seg button { padding: 7px 10px; font-size: 13px; }
   #settings .btn.primary { padding: 8px 26px; font-size: 22px; }
 }
+
+/* ---------- episodes / rounds ---------- */
+.eps { display: flex; gap: 8px; margin-bottom: 4px; }
+.eps button { pointer-events: auto; cursor: pointer; border: 2px solid #fff6; border-radius: 12px; padding: 7px 16px; background: #0a3f7acc; color: #fffc;
+  font: 900 italic 15px 'Arial Black', sans-serif; }
+.eps button.on { background: linear-gradient(#ffd84a, #ff8a00); color: #3a1300; border-color: #fff; }
+.round .rstars { display: flex; justify-content: center; gap: 2px; color: #fff4; min-height: 16px; }
+.round .rstars svg { width: 16px; height: 16px; }
+.round .rstars .on { color: var(--yellow); }
+.round .rgoals { font-size: 11px; color: #bfe3ff; min-height: 13px; }
+.round.pirate { background: linear-gradient(#5a3a22, #2a1a0e); border-color: #ffc21a; }
+
+/* ---------- HUD extras ---------- */
+.timerbox { display: flex; flex-direction: column; align-items: center; }
+.hudstars { display: flex; gap: 2px; height: 20px; color: #fff3; }
+.hudstars svg { width: 20px; height: 20px; filter: drop-shadow(0 2px 0 #3a1300); }
+.hudstars .on { color: var(--yellow); }
+.coinchip { display: flex; align-items: center; gap: 4px; margin-right: 6px; }
+.coinchip.hide { display: none; }
+.coin { display: inline-block; width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fff6b0, #ffc21a 55%, #b8740a); border: 2px solid #8a4a00; }
+#ghostTag { position: absolute; left: 0; top: 0; transform: translate(-50%, -100%); padding: 3px 8px; border-radius: 8px; background: #1c7fd6cc; border: 2px solid #fff8;
+  font: 800 11px 'Segoe UI', sans-serif; letter-spacing: .05em; white-space: nowrap; display: none; }
+#ghostTag.show { display: block; }
+#resVs { margin: 0; min-height: 20px; font: 900 italic 18px 'Arial Black', sans-serif; color: #7dff8a; text-shadow: 0 2px 0 #06245a; }
+.goals { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; background: #0a3f7acc; border: 2px solid #fff4; border-radius: 12px; padding: 8px 14px; text-align: left; }
+.goals div { font-size: 14px; font-weight: 700; display: flex; gap: 8px; align-items: center; }
+.goals i { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff8; display: inline-flex; align-items: center; justify-content: center; font-style: normal; font-size: 12px; }
+.goals .done i { background: #2fbf4a; border-color: #bfffc9; }
+.goals .new { color: #7dff8a; }
+@media (max-height: 480px) {
+  .goals { padding: 4px 10px; gap: 2px; }
+  .goals div { font-size: 12px; }
+  .stars svg { width: 36px; height: 36px; }
+}
+
+/* ---------- fit menu / result on short screens (phones in landscape, small laptop windows) ---------- */
+#menu, #result { justify-content: safe center; overflow-y: auto; }
+.btnrow { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+@media (max-height: 640px) {
+  #menu, #result { gap: 6px; padding: 10px 16px; }
+  .logo.big { font-size: 62px; }
+  #result h2 { margin: 0; }
+  .stars svg { width: 40px; height: 40px; }
+  .stats { margin-bottom: 2px; }
+  .stats div { padding: 5px 14px; }
+  .btnrow { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 10px; }
+  .btnrow .btn { min-width: 170px; padding: 10px 22px; font-size: 18px; }
+  .btnrow .btn.primary { font-size: 22px; }
+  #gpuWarn { font-size: 11px; padding: 4px 10px; }
+}
+@media (max-height: 420px) {
+  .logo.big { font-size: 46px; }
+  #menuTag { margin: 0; font-size: 12px; }
+  .eps button { padding: 4px 12px; font-size: 13px; }
+  .round { width: 132px; padding: 6px 8px; }
+  .round b { font-size: 16px; }
+  .stars svg { width: 30px; height: 30px; }
+  .stats b { font-size: 18px; }
+  #resVs { font-size: 14px; min-height: 0; }
+}

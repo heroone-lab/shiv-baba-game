@@ -1,0 +1,1 @@
+[{"path": "/index.html?q=low&pr=0.3&nopost", "w": 480, "h": 270, "steps": [{"eval": "window.__part='spawn+rates'; window.__rounds=['E2R1','E2R2','E2R3']; 1"}, {"evalFile": "tools/tests/ep2_bot.js"}]}]

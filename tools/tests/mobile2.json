@@ -1,0 +1,7 @@
+[{"path":"/index.html?pr=1&q=low","w":844,"h":390,"touch":true,"steps":[
+ {"until":"window.__game && __game.mode==='menu'"},
+ {"click":"#epTabs button:nth-child(2)"},{"wait":500},{"shot":"shots/m2_menu.png"},
+ {"eval":"(()=>{const g=__game; g.loadRound('E2R3'); g.showScreen(null); g.showHud(true); g.mode='play'; g.player.release(); g.player.respawn({x:78.4,y:1.4}); g.cam.snap(g.player,g.course); g.simulate(0.9,(t,p)=>({move:1, jump:p.pos.x>78.3})); g.frozenForTest=false; g.mode='paused'; return g.player.pos.x.toFixed(1)})()"},
+ {"wait":1500},{"shot":"shots/m2_balls.png"},
+ {"eval":"(()=>{const g=__game; g.showScreen(null); g.mode='play'; g.loadRound('E2R2'); g.showScreen(null); g.showHud(true); g.mode='play'; g.player.release(); g.player.respawn({x:44,y:1.4}); g.cam.snap(g.player,g.course); g.simulate(0.4,()=>({move:1})); g.frozenForTest=false; return 1})()"},
+ {"wait":1200},{"shot":"shots/m2_blade.png"}]}]

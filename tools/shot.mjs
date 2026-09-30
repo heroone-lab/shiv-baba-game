@@ -28,6 +28,10 @@ for (const job of jobs) {
     if (step.wait) await page.waitForTimeout(step.wait);
     if (step.until) await page.waitForFunction(step.until, null, { timeout: 240000, polling: 250 }).catch(() => logs.push('until timeout: ' + step.until));
     if (step.eval) logs.push('eval: ' + JSON.stringify(await page.evaluate(step.eval)));
+    if (step.evalFile) {
+      const r = await page.evaluate(fs.readFileSync(step.evalFile, 'utf8')).catch((e) => 'ERR ' + e.message);
+      logs.push('eval: ' + (Array.isArray(r) ? '\n  ' + r.join('\n  ') : JSON.stringify(r)));
+    }
     if (step.key) await page.keyboard.press(step.key);
     if (step.down) await page.keyboard.down(step.down);
     if (step.up) await page.keyboard.up(step.up);

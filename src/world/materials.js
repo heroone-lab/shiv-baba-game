@@ -23,6 +23,14 @@ export class Materials {
     this.rope = new THREE.MeshStandardMaterial({ color: 0xcdb58a, roughness: 0.9 });
     this.concrete = new THREE.MeshStandardMaterial({ color: 0xd9d6cf, roughness: 0.85 });
     this.tile = new THREE.MeshPhysicalMaterial({ color: 0x1b8fc4, roughness: 0.2, clearcoat: 0.8, clearcoatRoughness: 0.15 });
+    // pirate set (Episode 2)
+    this.iron = new THREE.MeshStandardMaterial({ color: 0x1c1d21, metalness: 0.75, roughness: 0.38 });
+    this.brass = new THREE.MeshStandardMaterial({ color: 0xb8863b, metalness: 0.9, roughness: 0.3 });
+    this.steelBright = new THREE.MeshStandardMaterial({ color: 0xc9ced4, metalness: 0.95, roughness: 0.22 });
+    this.shark = new THREE.MeshStandardMaterial({ color: 0x7d8a96, roughness: 0.45, metalness: 0.05 });
+    this.sharkBelly = new THREE.MeshStandardMaterial({ color: 0xe8ecef, roughness: 0.5 });
+    this.gold = new THREE.MeshStandardMaterial({ color: 0xffc21a, metalness: 1, roughness: 0.25, emissive: 0x6a3a00, emissiveIntensity: 0.35 });
+    this.darkWood = this.pbr(assets.planks, { color: 0x8c6a4c, normalScale: 1.0 });
     this.fancyMats = [this.padRed, this.padOrange, this.padYellow, this.padBlue, this.padTeal, this.padWhite, this.tile];
     this.fancy = true;
   }

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PoolWater } from './PoolWater.js';
 import { boxUV } from './materials.js';
-import { logoTexture, flagTexture } from './textures.js';
+import { logoTexture, flagTexture, pirateFlagTexture } from './textures.js';
 import { mergeStatic, noReflect } from './merge.js';
 
 // Deterministic pseudo random so the scenery is identical every run.
@@ -148,6 +148,8 @@ export class Environment {
     const poleMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e8, metalness: 0.7, roughness: 0.35 });
     const poleGeo = new THREE.CylinderGeometry(0.05, 0.06, 7, 8);
     const flagMats = colors.map(([c, st]) => this.wavingMaterial(flagTexture(c, st)));
+    this.flagMats = flagMats;
+    this.poolFlagMaps = flagMats.map((m) => m.map);
     const geo = new THREE.PlaneGeometry(1.9, 1.15, 14, 6);
     geo.translate(0.95, 0, 0);
     for (let i = 0; i < 16; i++) {
@@ -164,6 +166,20 @@ export class Environment {
       flag.layers.set(1);
       this.scene.add(flag);
     }
+  }
+
+  /** Episode look: pool flags + blue billboard (Ep 1) or skull flags + pirate billboard (Ep 2). */
+  setTheme(theme, episode = 1) {
+    if (this.currentTheme === theme && this.currentEp === episode) return;
+    this.currentTheme = theme; this.currentEp = episode;
+    const pirate = theme === 'pirate';
+    if (pirate && !this.pirateFlag) this.pirateFlag = pirateFlagTexture();
+    this.flagMats.forEach((m, i) => { m.map = pirate ? this.pirateFlag : this.poolFlagMaps[i]; m.needsUpdate = true; });
+    if (!this.boardTex[episode]) {
+      this.boardTex[episode] = logoTexture({ w: 2048, h: 512, bg: pirate ? ['#3a2414', '#140a04'] : ['#0b3d91', '#06245a'], sub: pirate ? 'PIRATE COVE · EPISODE 2' : `OBSTACLE COURSE · EPISODE ${episode}` });
+    }
+    this.boardMat.map = this.boardMat.emissiveMap = this.boardTex[episode];
+    this.boardMat.needsUpdate = true;
   }
 
   /** Flag cloth animated in the vertex shader (no per-frame CPU work). */
@@ -186,6 +202,9 @@ export class Environment {
     // Big course billboard behind the channel.
     const tex = logoTexture({ w: 2048, h: 512, bg: ['#0b3d91', '#06245a'], sub: 'OBSTACLE COURSE · EPISODE 1' });
     const board = new THREE.Mesh(new THREE.PlaneGeometry(16, 4), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.25 }));
+    board.userData.keep = true; // its texture changes per episode, so keep it out of the static merge
+    this.boardMat = board.material;
+    this.boardTex = { 1: tex };
     const z = -30, x = 52, y = terrainHeight(x, z);
     board.position.set(x, y + 6.5, z);
     const legMat = new THREE.MeshStandardMaterial({ color: 0x2c3036, metalness: 0.8, roughness: 0.4 });

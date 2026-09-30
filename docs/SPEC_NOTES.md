@@ -74,3 +74,48 @@ Ends at a finish drum.
 ## Known issues in the source PDF
 - Frame sheets 1/58 to 58/58 are all identical: frames F1200 to F1320 (40.00s to 44.00s, the start of Round 01 O1). The frames for the rest of Round 01 and all of Rounds 02 and 03 are missing.
 - The reference visuals are stylised/cartoon mobile-game art. The target look is realistic PBR, keeping the same layout and colour family.
+
+---
+
+# Episode 2: pirate cove (from `Wipeout2_Episode_02_Full_Detail.pdf`)
+Source: 283 pages, 281 frames (402–962 s, one every 2 s). Frames 884–962 s are already **Episode 03 Round 01** (castle/knight theme on a metal deck), so they are not part of Episode 2.
+
+## Look
+- Same pool, grass and hills. Pirate props: skull crates and flags, a shark, anchors, ship wheels, cannons, a crow's-nest finish.
+- Wooden zig-zag bridges. Chevron-painted planks mark slide/boost sections. Dark iron obstacles.
+- The start is a tower with a chevron **slide ramp** down to the course (tip: "sliding downhill is an effective way to go faster").
+
+## Round flow and HUD (seen on screen)
+- SET! → GO!, then the timer **counts down** (~60 s). Three stars above the timer are lost as time passes.
+- Coin counter (x/12, x/10). A "Your Opponent" ghost races along.
+- After a fall: WIPEOUT splash, then "Get Ready!" and respawn.
+- TIME'S UP! → ELIMINATED. On finish: COMPLETED! with stars, coins, "You won against your opponent".
+- Secondary goals per round: "Slide 5 times in the same course", "Obtain 3 stars", "Jump while sliding", "Use the Speed Boost 3 times".
+- (The shop, character roster, power-up purchases and leaderboards are menus of the original app. Not reproduced.)
+
+## Obstacles
+| Name | Frames | Motion |
+|---|---|---|
+| Sweeper (orange hub + low arm) | 434, 446, 456 | yaw at ankle height; jump it |
+| Propeller rotor (4 arms on a post) | 450, 608 | yaw at head height; slide or time it |
+| Swinging barrel | 458, 566 | pendulum across the lane |
+| Iron pipe gate (black frame) | 462–472, 664 | rolls around the lane axis; low bar must be jumped |
+| Stamper piston | 500, 742 | slams down from above, then rises |
+| Ship-wheel spinner (horizontal) | 508, 526 | yaw with handles at waist height over a round deck |
+| Side cannon | 562 | fires iron balls across the lane |
+| Blade pendulum on arch | 570–588 | swings along the lane |
+| Skull crate | 428, 598, 708, 842 | slides across the lane, pushes you off |
+| Anchor pendulum (+ shark) | 692 | pendulum across the lane |
+| Vertical ship wheel | 716–720, 848–852 | spokes rotate through the lane |
+| Big balls (skull balls on poles) | 736–774, 866–872 | bobbing balls; hop ball to ball |
+| Stepping blocks with gaps | 482–524, 700–706 | static; short jumps |
+| Speed-boost strip (red arrows) | 716, 848 | static; speeds you up |
+
+### Episode 2 tuning (bot-tested)
+- Digital controls give no half-speed jumps, so gaps are sized for a full jump (~5.3 m flat). Stepping blocks are 2.4 m long on a 5.0 m pitch (4.8 m when climbing). Balls are 2.7 m wide on a 5.3 m pitch.
+- Boost afterglow is 0.5 s, and carried speed bleeds at 14 m/s² on the ground. Boost strips never sit under a checkpoint.
+- Ball landing counts on a curved top: ground snap is kept across sub-steps.
+- Blade pendulum pivot is 5.1 m (slide under it). Vertical wheel: 2 handle pins at 1.0 rad/s.
+- E2R3 piston between balls 2 and 3 punches down into the jump arc. Hop through while it is up.
+- Extra checkpoint in E2R3 at x 77.1: past the vertical wheel, before the balls.
+- Blind-bot pass rate per obstacle is 5–12/12 (the bot uses the best of run/jump/slide at fixed distances). Obstacle-free best times are E2R1 ≈ 16 s, E2R2 ≈ 16 s, E2R3 ≈ 19 s.
