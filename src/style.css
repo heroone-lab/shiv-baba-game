@@ -113,3 +113,26 @@ body.touch .desktop-only { display: none; }
 
 #rotate { display: none; position: absolute; left: 50%; bottom: calc(120px + var(--safe-b)); transform: translateX(-50%); background: #000a; padding: 8px 14px; border-radius: 10px; font-size: 13px; white-space: nowrap; }
 @media (orientation: portrait) { body.touch #rotate { display: block; } }
+
+/* ---------- settings ---------- */
+.set-grid { display: grid; grid-template-columns: auto auto; gap: 10px 16px; align-items: center; background: #0a3f7acc; border: 2px solid #fff4;
+  border-radius: 16px; padding: 16px 20px; text-align: left; }
+.set-grid label { font-weight: 800; font-size: 15px; }
+.seg { display: flex; background: #0006; border-radius: 12px; padding: 3px; gap: 3px; }
+.seg button { pointer-events: auto; cursor: pointer; border: 0; border-radius: 9px; padding: 9px 14px; min-width: 76px; background: transparent; color: #fffc;
+  font: 800 14px 'Segoe UI', Roboto, sans-serif; }
+.seg button.on { background: linear-gradient(#ffd84a, #ff8a00); color: #3a1300; box-shadow: 0 2px 0 #8a3a00; }
+#setNote { max-width: 520px; min-height: 18px; }
+@media (max-height: 480px) {
+  #settings { gap: 6px; padding: 10px; }
+  #settings h2 { font-size: 28px; margin: 0; }
+  .set-grid { gap: 6px 12px; padding: 10px 14px; }
+  .seg button { padding: 7px 10px; min-width: 62px; font-size: 13px; }
+}
+
+/* ---------- FPS meter ---------- */
+#fpsMeter { display: none; position: absolute; right: calc(12px + var(--safe-r)); top: calc(70px + var(--safe-t)); padding: 4px 9px; border-radius: 8px;
+  background: #000a; font: 700 12px ui-monospace, Menlo, Consolas, monospace; color: #7dff8a; }
+#fpsMeter.show { display: block; }
+#fpsMeter[data-level="ok"] { color: #ffd84a; }
+#fpsMeter[data-level="bad"] { color: #ff6a5a; }

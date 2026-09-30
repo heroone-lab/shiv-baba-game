@@ -75,12 +75,18 @@ export class Player {
     if (controlled) this.control(dt, input);
 
     // gravity + integration with sub-steps so fast bodies do not tunnel through decks
+    // Average of old and new vertical speed = exact for constant gravity, so the
+    // jump arc is identical whatever the frame rate / step size.
+    const vy0 = this.vel.y;
     this.vel.y = Math.max(this.vel.y - PHYS.gravity * dt, -PHYS.maxFall);
+    const vyAvg = (vy0 + this.vel.y) / 2;
     const steps = Math.max(1, Math.ceil((this.vel.length() * dt) / 0.12));
     const h = dt / steps;
     const wasGrounded = this.grounded;
     for (let i = 0; i < steps; i++) {
-      this.pos.addScaledVector(this.vel, h);
+      this.pos.x += this.vel.x * h;
+      this.pos.z += this.vel.z * h;
+      this.pos.y += (this.vel.y === 0 ? 0 : vyAvg) * h; // landing/head-bump zeroes vel.y
       this.resolveDecks(wasGrounded);
     }
 

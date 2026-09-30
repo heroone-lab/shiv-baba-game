@@ -18,7 +18,7 @@ const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
 for (const job of jobs) {
-  const page = await browser.newPage({ viewport: { width: job.w || 900, height: job.h || 900 }, hasTouch: !!job.touch, isMobile: !!job.touch });
+  const page = await browser.newPage({ viewport: { width: job.w || 900, height: job.h || 900 }, deviceScaleFactor: job.dpr || 1, hasTouch: !!job.touch, isMobile: !!job.touch });
   const logs = [];
   page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
   page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));

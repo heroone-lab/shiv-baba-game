@@ -12,9 +12,23 @@ npm run build          # production web build -> dist/
 npx cap sync android   # copy dist/ into the Android project
 cd android && ./gradlew assembleDebug   # APK -> android/app/build/outputs/apk/debug/
 ```
-**Download the Android APK:** [apk/ShivBaba-v0.1.0-debug.apk](apk/ShivBaba-v0.1.0-debug.apk). Open it, tap "Download raw file", then install it on your phone (allow "Install unknown apps"). This is a debug build, not for the Play Store.
+**Download the Android APK:** [apk/ShivBaba-v0.2.0-debug.apk](apk/ShivBaba-v0.2.0-debug.apk). Open it, tap "Download raw file", then install it on your phone (allow "Install unknown apps"). This is a debug build, not for the Play Store.
 
-URL options: `?q=high|low` (quality), `?nopost` (no post-processing), `?autostart`.
+## Display settings (menu → SETTINGS, also from Pause)
+| Resolution | Shadow map | Water reflection | Bloom | Anti-aliasing |
+|---|---|---|---|---|
+| 480p | 1024 | 256 | off | SMAA |
+| 720p | 1024 | 512 | on | SMAA |
+| 1080p | 2048 | 1024 | on | 4× MSAA on desktop, SMAA on phones |
+
+- **Resolution** sets the render size of the screen's short side. It is capped at the screen's native pixels.
+- **Frame rate**: 30 / 48 / 60 FPS cap. Correct on 60, 90, 120 and 144 Hz screens.
+- Gameplay does not depend on frame rate. The simulation runs in steps of ≤ 1/60 s, so jump height and speed are the same at every FPS.
+- **Show FPS**: live meter (green = on target, yellow/red = below).
+- **Texture detail**: Auto / High / Low. Changing it reloads the page.
+- Defaults: desktop 1080p @ 60, phones 720p @ 30. Settings are saved on the device.
+
+URL options: `?res=480|720|1080`, `?fps=30|48|60`, `?q=high|low`, `?nopost`, `?autostart`.
 
 ## Controls
 | Action | Keyboard | Touch | Gamepad |

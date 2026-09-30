@@ -1,6 +1,6 @@
 {
   "name": "shiv-baba",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "SHIV BABA — 2.5D obstacle course game (web + Android)",

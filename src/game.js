@@ -16,6 +16,7 @@ import { Audio } from './audio.js';
 import { Particles } from './fx/particles.js';
 import { ROUND_TIME_LIMIT } from './config.js';
 import { testCapsule } from './collision.js';
+import { loadSettings, saveSettings, RES_PRESETS, RESOLUTIONS, FPS_OPTIONS, pixelRatioFor, FrameLimiter, FpsMeter } from './settings.js';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
@@ -24,6 +25,12 @@ const params = new URLSearchParams(location.search);
 export class Game {
   constructor() {
     this.q = qualitySettings(detectQuality());
+    this.settings = loadSettings();
+    // resolution preset decides shadow/reflection/post budgets
+    Object.assign(this.q, this.displayBudget());
+    this.limiter = new FrameLimiter(this.settings.fps);
+    this.fpsMeter = new FpsMeter();
+    this.slowTime = 0;
     this.mode = 'loading'; // loading | menu | intro | countdown | play | paused | done
     this.input = new Input();
     this.audio = new Audio();
@@ -47,12 +54,13 @@ export class Game {
     this.resize();
     addEventListener('resize', () => this.resize());
     this.clock = new THREE.Timer();
-    this.renderer.setAnimationLoop(() => this.frame());
+    this.renderer.setAnimationLoop((now) => this.frame(now));
     // compile shaders up front so the first frames do not hitch
     this.renderer.compile(this.scene, this.camera);
     this.showScreen('menu');
     this.mode = 'menu';
     setTimeout(() => $('loading').remove(), 500);
+    $('fpsMeter').classList.toggle('show', this.settings.showFps);
     if (params.has('autostart')) this.startRound(params.has('skipintro'));
     window.__game = this;
     window.__dbg = { THREE, testCapsule };
@@ -62,7 +70,7 @@ export class Game {
   initRenderer() {
     const canvas = $('c');
     const r = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: true });
-    r.setPixelRatio(params.has('pr') ? +params.get('pr') : this.q.pixelRatio);
+    r.setPixelRatio(this.currentPixelRatio());
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFShadowMap;
     r.outputColorSpace = THREE.SRGBColorSpace;
@@ -73,8 +81,21 @@ export class Game {
     this.camera.position.set(0, 4, 13);
   }
 
+  displayBudget() {
+    const p = RES_PRESETS[this.settings.resolution];
+    // MSAA is expensive on phone GPUs; SMAA gives similar edges for far less
+    const msaa = IS_TOUCH ? 0 : p.msaa;
+    return { shadowMap: p.shadowMap, waterRes: p.waterRes, bloom: p.bloom, msaa };
+  }
+
+  currentPixelRatio() {
+    if (params.has('pr')) return +params.get('pr');
+    return pixelRatioFor(this.settings.resolution).pixelRatio;
+  }
+
   initPost() {
     if (params.has('nopost')) return;
+    if (this.composer) { this.composer.dispose(); this.composer = null; }
     const c = new EffectComposer(this.renderer, { frameBufferType: THREE.HalfFloatType, multisampling: this.q.msaa });
     c.addPass(new RenderPass(this.scene, this.camera));
     const fx = [];
@@ -158,18 +179,77 @@ export class Game {
         if (a === 'menu') this.toMenu();
       };
     }
-    const snd = $('snd');
-    const setSnd = () => { snd.textContent = this.audio.muted ? 'Sound: OFF' : 'Sound: ON'; };
-    setSnd();
-    snd.onclick = () => { this.audio.setMuted(!this.audio.muted); setSnd(); };
-    const qual = $('qual');
-    const saved = localStorage.getItem('sb_quality');
-    qual.textContent = `Quality: ${saved ? saved.toUpperCase() : 'AUTO (' + this.q.tier.toUpperCase() + ')'}`;
-    qual.onclick = () => {
-      const next = { null: 'high', high: 'low', low: null }[saved ?? 'null'];
-      if (next) localStorage.setItem('sb_quality', next); else localStorage.removeItem('sb_quality');
-      location.reload();
+    $('openSettings').onclick = () => this.openSettings('menu');
+    $('pauseSettings').onclick = () => this.openSettings('pause');
+    this.buildSettingsUI();
+  }
+
+  // ------------------------------------------------------------------ settings
+  buildSettingsUI() {
+    const seg = (id, values, label, current, onPick) => {
+      const box = $(id);
+      box.innerHTML = '';
+      for (const v of values) {
+        const b = document.createElement('button');
+        b.textContent = label(v);
+        b.className = v === current() ? 'on' : '';
+        b.onclick = () => { onPick(v); for (const x of box.children) x.classList.toggle('on', x === b); this.refreshSettingsInfo(); };
+        box.appendChild(b);
+      }
     };
+    seg('setRes', RESOLUTIONS, (v) => `${v}p`, () => this.settings.resolution, (v) => { this.settings.resolution = v; this.applyDisplay(); });
+    seg('setFps', FPS_OPTIONS, (v) => `${v} FPS`, () => this.settings.fps, (v) => { this.settings.fps = v; this.applyDisplay(); });
+    const saved = localStorage.getItem('sb_quality');
+    seg('setDetail', ['auto', 'high', 'low'], (v) => (v === 'auto' ? `Auto (${detectQuality() === 'high' && !saved ? 'High' : saved ? saved : 'Low'})` : v === 'high' ? 'High' : 'Low'),
+      () => saved || 'auto', (v) => {
+        if (v === 'auto') localStorage.removeItem('sb_quality'); else localStorage.setItem('sb_quality', v);
+        if ((v === 'auto' ? detectQuality() : v) !== this.q.tier) { $('setNote').textContent = 'Reloading textures…'; setTimeout(() => location.reload(), 250); }
+      });
+    seg('setFpsShow', [true, false], (v) => (v ? 'On' : 'Off'), () => this.settings.showFps, (v) => { this.settings.showFps = v; this.applyDisplay(); });
+    seg('setSound', [true, false], (v) => (v ? 'On' : 'Off'), () => !this.audio.muted, (v) => this.audio.setMuted(!v));
+    $('settingsBack').onclick = () => this.closeSettings();
+    this.refreshSettingsInfo();
+  }
+
+  refreshSettingsInfo() {
+    const { renderShort, nativeShort } = pixelRatioFor(this.settings.resolution);
+    const w = Math.round(renderShort * Math.max(innerWidth, innerHeight) / Math.min(innerWidth, innerHeight));
+    const capped = renderShort < this.settings.resolution;
+    $('setNote').textContent = `Rendering ${w} × ${renderShort}` + (capped ? ` (your screen is ${nativeShort}p, so ${this.settings.resolution}p is capped)` : '') +
+      ` · target ${this.settings.fps} FPS`;
+  }
+
+  openSettings(from) {
+    this.settingsFrom = from;
+    this.showScreen('settings');
+    this.refreshSettingsInfo();
+  }
+
+  closeSettings() {
+    this.showScreen(this.settingsFrom === 'pause' ? 'pause' : 'menu');
+  }
+
+  /** Apply resolution / FPS / meter settings live, without reloading. */
+  applyDisplay() {
+    saveSettings(this.settings);
+    this.limiter.set(this.settings.fps);
+    const budget = this.displayBudget();
+    const needPost = budget.bloom !== this.q.bloom || budget.msaa !== this.q.msaa;
+    const sun = this.env.sun;
+    if (budget.shadowMap !== this.q.shadowMap) {
+      sun.shadow.mapSize.set(budget.shadowMap, budget.shadowMap);
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null;
+    }
+    if (budget.waterRes !== this.q.waterRes) {
+      this.env.water.mesh.material.uniforms.mirrorSampler.value.renderTarget?.setSize(budget.waterRes, budget.waterRes);
+    }
+    Object.assign(this.q, budget);
+    this.renderer.setPixelRatio(this.currentPixelRatio());
+    if (needPost) this.initPost();
+    this.resize();
+    $('fpsMeter').classList.toggle('show', this.settings.showFps);
+    this.slowTime = 0;
   }
 
   showScreen(id) {
@@ -293,16 +373,44 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ loop
-  frame() {
-    this.clock.update();
+  frame(now = performance.now()) {
+    if (!this.limiter.shouldRender(now)) return;
+    this.clock.update(now);
     const raw = this.clock.getDelta();
     this.realTime += raw;
-    const dt = Math.min(raw, 1 / 20);
+    this.trackFps(now);
+    const dt = Math.min(raw, 1 / 10);
     if (this.frozenForTest) { this.render(dt); return; }
     this.input.update();
     if (this.input.consumePause()) this.togglePause();
-    this.advance(dt, this.input);
+    // Simulate in equal sub-steps no longer than 1/60 s so gameplay feels
+    // identical at 30, 48 or 60 FPS; jump/slide presses fire on the first step only.
+    const n = Math.max(1, Math.ceil(dt * 60 - 1e-3));
+    const h = dt / n;
+    for (let i = 0; i < n; i++) {
+      this.step(h, i === 0 ? this.input : { ...this.input, jumpPressed: false, slidePressed: false });
+    }
+    this.visuals(dt);
     this.render(dt);
+  }
+
+  trackFps(now) {
+    const fps = this.fpsMeter.tick(now);
+    if (this.settings.showFps && (!this.fpsShownAt || now - this.fpsShownAt > 250)) {
+      this.fpsShownAt = now;
+      const el = $('fpsMeter');
+      const ratio = fps / this.settings.fps;
+      el.textContent = `${fps.toFixed(0)} FPS · ${pixelRatioFor(this.settings.resolution).renderShort}p`;
+      el.dataset.level = ratio > 0.93 ? 'good' : ratio > 0.75 ? 'ok' : 'bad';
+    }
+    // gentle hint if the device cannot hold the chosen target during play
+    if (this.mode === 'play' && this.fpsMeter.times.length > 20) {
+      this.slowTime = fps < this.settings.fps * 0.8 ? this.slowTime + 1 : 0;
+      if (this.slowTime === 240 && !this.slowHinted) {
+        this.slowHinted = true;
+        this.banner(`<small>Device can't hold ${this.settings.fps} FPS here.<br>Try a lower resolution in Settings.</small>`, 3.5);
+      }
+    }
   }
 
   render(dt) {
@@ -321,30 +429,37 @@ export class Game {
       const inp = { move: s.move || 0, jumpHeld: !!s.jump, jumpPressed: !!s.jump && !prevJ, slidePressed: !!s.slide && !prevS };
       prevJ = !!s.jump; prevS = !!s.slide;
       this.realTime += step;
-      this.advance(step, inp);
+      this.step(step, inp);
+      this.visuals(step);
       t += step;
       if (s.log) log.push(s.log);
     }
     return log;
   }
 
-  advance(dt, input) {
-    if (this.mode !== 'paused') {
-      this.course.update(dt);
-      if (this.mode === 'play') {
-        this.time += dt;
-        const left = ROUND_TIME_LIMIT - this.time;
-        $('timer').textContent = fmt(this.time);
-        $('timer').classList.toggle('warn', left < 20);
-        if (left <= 0) this.timeUp();
-      }
-      this.player.update(dt, this.mode === 'play' ? input : IDLE_INPUT);
-      this.updateCheckpoint();
-      this.particles.update(dt);
-      if (this.mode === 'menu') this.menuCamera(dt);
-      else this.cam.update(dt, this.player, this.course);
-      this.env.update(dt, this.cam.focus);
+  /** Gameplay simulation step (called 1–N times per rendered frame). */
+  step(dt, input) {
+    if (this.mode === 'paused') return;
+    this.course.update(dt);
+    if (this.mode === 'play') {
+      this.time += dt;
+      if (ROUND_TIME_LIMIT - this.time <= 0) this.timeUp();
     }
+    this.player.update(dt, this.mode === 'play' ? input : IDLE_INPUT);
+    this.updateCheckpoint();
+  }
+
+  /** Per-rendered-frame work: camera, particles, water, flags, HUD text. */
+  visuals(dt) {
+    if (this.mode === 'paused') return;
+    if (this.mode === 'play' || this.mode === 'done') {
+      $('timer').textContent = fmt(this.time);
+      $('timer').classList.toggle('warn', ROUND_TIME_LIMIT - this.time < 20);
+    }
+    this.particles.update(dt);
+    if (this.mode === 'menu') this.menuCamera(dt);
+    else this.cam.update(dt, this.player, this.course);
+    this.env.update(dt, this.cam.focus);
   }
 
   menuCamera(dt) {
@@ -383,8 +498,10 @@ export class Game {
     this.camera.aspect = w / h;
     this.camera.fov = w / h < 1 ? 52 : 40;
     this.camera.updateProjectionMatrix();
+    this.renderer.setPixelRatio(this.currentPixelRatio());
     this.renderer.setSize(w, h, false);
     this.composer?.setSize(w, h);
+    if ($('settings')?.classList.contains('show')) this.refreshSettingsInfo();
   }
 }
 
