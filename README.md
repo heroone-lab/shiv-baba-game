@@ -1,5 +1,7 @@
 # SHIV BABA: 2.5D Obstacle Course (Web + Android)
 
+**▶ Play in the browser: https://heroone-lab.github.io/shiv-baba-game/**
+
 Three.js side-on obstacle course game. One codebase runs in the browser and is wrapped as an Android app with Capacitor.
 
 ## Run / build
